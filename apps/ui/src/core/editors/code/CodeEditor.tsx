@@ -444,34 +444,44 @@ export const CodeEditor = memo(({ tabId, content, source, panelId, isActive = tr
   const cmStatusCacheRef = useRef<{ query: string; docLen: number; count: number } | null>(null);
 
   const computeCmStatus = (view: EditorView): string => {
-    const q = getSearchQuery(view.state);
-    if (!q.search) return "";
-    const sel = view.state.selection.main;
-    const docLen = view.state.doc.length;
-    const cacheKey = `${q.search}|${q.caseSensitive}|${q.wholeWord}|${q.regexp}`;
+    try {
+      const q = getSearchQuery(view.state);
+      if (!q.search) return "";
 
-    let count: number;
-    const cache = cmStatusCacheRef.current;
-    if (cache && cache.query === cacheKey && cache.docLen === docLen) {
-      count = cache.count;
-    } else {
-      const cursor = q.getCursor(view.state.doc) as Iterator<{ from: number; to: number }>;
-      count = 0;
-      for (let n = cursor.next(); !n.done; n = cursor.next()) count++;
-      cmStatusCacheRef.current = { query: cacheKey, docLen, count };
+      // If regex mode is on but the current term is not a valid regex, show an error
+      // instead of attempting to iterate matches (which would throw).
+      const { useRegex, term } = useEditorSearchStore.getState();
+      if (useRegex && term && !isValidRegex(term)) return "Invalid regex";
+
+      const sel = view.state.selection.main;
+      const docLen = view.state.doc.length;
+      const cacheKey = `${q.search}|${q.caseSensitive}|${q.wholeWord}|${q.regexp}`;
+
+      let count: number;
+      const cache = cmStatusCacheRef.current;
+      if (cache && cache.query === cacheKey && cache.docLen === docLen) {
+        count = cache.count;
+      } else {
+        const cursor = q.getCursor(view.state.doc) as Iterator<{ from: number; to: number }>;
+        count = 0;
+        for (let n = cursor.next(); !n.done; n = cursor.next()) count++;
+        cmStatusCacheRef.current = { query: cacheKey, docLen, count };
+      }
+
+      if (count === 0) return "No results";
+
+      const cursor2 = q.getCursor(view.state.doc) as Iterator<{ from: number; to: number }>;
+      let currentIdx = -1;
+      let idx = 0;
+      for (let n = cursor2.next(); !n.done; n = cursor2.next()) {
+        if (sel.from >= n.value.from && sel.to <= n.value.to) { currentIdx = idx; break; }
+        idx++;
+      }
+      if (currentIdx >= 0) return `${currentIdx + 1} of ${count}`;
+      return `${count} result${count > 1 ? "s" : ""}`;
+    } catch {
+      return "Invalid regex";
     }
-
-    if (count === 0) return "No results";
-
-    const cursor2 = q.getCursor(view.state.doc) as Iterator<{ from: number; to: number }>;
-    let currentIdx = -1;
-    let idx = 0;
-    for (let n = cursor2.next(); !n.done; n = cursor2.next()) {
-      if (sel.from >= n.value.from && sel.to <= n.value.to) { currentIdx = idx; break; }
-      idx++;
-    }
-    if (currentIdx >= 0) return `${currentIdx + 1} of ${count}`;
-    return `${count} result${count > 1 ? "s" : ""}`;
   };
 
   // Scroll #code-editor-container so the current CM selection is centered in view.
@@ -494,7 +504,7 @@ export const CodeEditor = memo(({ tabId, content, source, panelId, isActive = tr
   // Register CM-backed search callbacks when this tab is active; unregister on deactivate.
   useEffect(() => {
     if (!editorView || !isActive) return;
-    const { registerSearchCallbacks, unregisterSearchCallbacks, setStatus } = useEditorSearchStore.getState();
+    const { registerSearchCallbacks, unregisterSearchCallbacks } = useEditorSearchStore.getState();
     const callbacks: SearchCallbacks = {
       onFindNext: () => { findNext(editorView); scrollMatchIntoView(editorView); },
       onFindPrevious: () => { findPrevious(editorView); scrollMatchIntoView(editorView); },

@@ -37,7 +37,8 @@ export function PersistentSearchPanel() {
   if (!isOpen) return null;
 
   const noQuery = !term;
-  const status = callbacks?.getStatus() ?? "";
+  let status = "";
+  try { status = callbacks?.getStatus() ?? ""; } catch { status = "Invalid regex"; }
 
   return (
     <SearchPanelView
