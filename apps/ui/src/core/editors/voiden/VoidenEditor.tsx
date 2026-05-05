@@ -1233,13 +1233,14 @@ const VoidenEditorInner = ({
 
   // Unified effect to recalc as needed
   useEffect(() => {
+    if (!showFind) return;
     recalcFindMatches();
-  }, [editor, findTerm, matchCase, matchWholeWord, useRegex]);
+  }, [editor, findTerm, matchCase, matchWholeWord, useRegex, showFind]);
 
   // Reapply highlights on document edits while search is active (without resetting selection)
   // Debounced to avoid dispatching a new transaction on every keystroke
   useEffect(() => {
-    if (!editor || !findTerm) return;
+    if (!editor || !findTerm || !showFind) return;
     let searchDebounceTimer: number | null = null;
     const onUpdate = () => {
       if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
@@ -1260,7 +1261,7 @@ const VoidenEditorInner = ({
       editor.off("update", onUpdate);
       if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
     };
-  }, [editor, findTerm, matchCase, matchWholeWord, useRegex, currentMatch]);
+  }, [editor, findTerm, matchCase, matchWholeWord, useRegex, currentMatch, showFind]);
 
   // Navigate to a specific match (PM or CM).
   // scroll=true: physically scroll + select (explicit next/prev/replace).
