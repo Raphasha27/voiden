@@ -1852,194 +1852,194 @@ export const FileSystemList = () => {
           />
         )}
       </div>
-      {storeIsSearching && (
-        <div className="p-2">
-          <SearchPanelView
-            findValue={rawQuery}
-            replaceValue=""
-            matchCase={matchCase}
-            matchWholeWord={matchWholeWord}
-            useRegex={useRegex}
-            multiline={useMultiline}
-            showReplace={false}
-            hideNav
-            findInputRef={findInputRef}
-            onFindChange={setRawQuery}
-            onReplaceChange={() => {}}
-            onToggleMatchCase={() => setMatchCase((c) => !c)}
-            onToggleMatchWholeWord={() => setMatchWholeWord((w) => !w)}
-            onToggleRegex={() => setUseRegex((r) => !r)}
-            onToggleMultiline={() => setUseMultiline((m) => !m)}
-            onClose={() => { setStoreIsSearching(false); setRawQuery(""); }}
-          />
-        </div>
-      )}
-      {storeIsSearching ? (
-        <div
-          className="flex flex-col flex-1 overflow-y-auto p-2"
-          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
-        >
-          {searchError && <div className="text-red-500 text-sm">Error running search: {searchError}</div>}
-          {!searchError && searchQuery && (() => {
-            const matchCount = searchResults.length;
-            const fileCount = new Set(searchResults.map((r) => r.path)).size;
-            return (
-              <div className="flex items-center gap-2 text-xs text-gray-400 px-2 mb-1">
-                {!isSearching && matchCount === 0 && rawQuery === searchQuery && <span>No results for "{rawQuery}"</span>}
-                {matchCount > 0 && <span>{matchCount} match{matchCount === 1 ? "" : "es"} in {fileCount} file{fileCount === 1 ? "" : "s"}</span>}
-                {isSearching && <Loader size={12} className="animate-spin text-accent shrink-0" />}
-              </div>
-            );
-          })()}
-          {searchResults.length > 0 && (() => {
-            const firstLine = searchQuery.split(/\r?\n/).find((l) => l.length > 0) ?? "";
-            const rawPattern = useRegex
-              ? firstLine
-              : firstLine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const wrapped = matchWholeWord ? `\\b(?:${rawPattern})\\b` : rawPattern;
-            let splitter: RegExp | null = null;
-            try {
-              splitter = rawPattern ? new RegExp(`(${wrapped})`, matchCase ? "" : "i") : null;
-            } catch { splitter = null; }
+      {/* Search Panel — always rendered, visibility controlled by CSS */}
+      <div className={cn("p-2", !storeIsSearching && "hidden")}>
+        <SearchPanelView
+          findValue={rawQuery}
+          replaceValue=""
+          matchCase={matchCase}
+          matchWholeWord={matchWholeWord}
+          useRegex={useRegex}
+          multiline={useMultiline}
+          showReplace={false}
+          hideNav
+          findInputRef={findInputRef}
+          onFindChange={setRawQuery}
+          onReplaceChange={() => {}}
+          onToggleMatchCase={() => setMatchCase((c) => !c)}
+          onToggleMatchWholeWord={() => setMatchWholeWord((w) => !w)}
+          onToggleRegex={() => setUseRegex((r) => !r)}
+          onToggleMultiline={() => setUseMultiline((m) => !m)}
+          onClose={() => { setStoreIsSearching(false); setRawQuery(""); }}
+        />
+      </div>
 
-            const openMatch = async (path: string, line: number, col: number, matchIndex: number) => {
-              const editorSearch = useEditorSearchStore.getState();
-              // Set search params before opening the tab so CM knows what to highlight.
-              editorSearch.setTerm(searchQuery);
-              editorSearch.setMatchCase(matchCase);
-              editorSearch.setMatchWholeWord(matchWholeWord);
-              editorSearch.setUseRegex(useRegex);
-              editorSearch.setUseMultiline(useMultiline);
-              const newTab = {
-                id: crypto.randomUUID(),
-                type: "document" as const,
-                title: path.split("/").pop() || path,
-                source: path,
-                directory: null,
-              };
-              const response = await window.electron?.state.addPanelTab("main", newTab);
-              const tabId = response?.tabId;
-              if (tabId) await activateTab({ panelId: "main", tabId });
-              // Set all target info AFTER activateTab in the same React batch as
-              // requestOpenSearchPanel so navigation effects fire last and win.
-              editorSearch.setTargetLine(line);
-              editorSearch.setTargetCol(col);
-              editorSearch.setTargetPath(path);
-              editorSearch.setTargetMatchIndex(matchIndex);
-              editorSearch.requestOpenSearchPanel();
+      {/* Search Results — always rendered, visibility controlled by CSS */}
+      <div
+        className={cn("flex flex-col flex-1 overflow-y-auto p-2", !storeIsSearching && "hidden")}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      >
+        {searchError && <div className="text-red-500 text-sm">Error running search: {searchError}</div>}
+        {!searchError && searchQuery && (() => {
+          const matchCount = searchResults.length;
+          const fileCount = new Set(searchResults.map((r) => r.path)).size;
+          return (
+            <div className="flex items-center gap-2 text-xs text-gray-400 px-2 mb-1">
+              {!isSearching && matchCount === 0 && rawQuery === searchQuery && <span>No results for "{rawQuery}"</span>}
+              {matchCount > 0 && <span>{matchCount} match{matchCount === 1 ? "" : "es"} in {fileCount} file{fileCount === 1 ? "" : "s"}</span>}
+              {isSearching && <Loader size={12} className="animate-spin text-accent shrink-0" />}
+            </div>
+          );
+        })()}
+        {searchResults.length > 0 && (() => {
+          const firstLine = searchQuery.split(/\r?\n/).find((l) => l.length > 0) ?? "";
+          const rawPattern = useRegex
+            ? firstLine
+            : firstLine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const wrapped = matchWholeWord ? `\\b(?:${rawPattern})\\b` : rawPattern;
+          let splitter: RegExp | null = null;
+          try {
+            splitter = rawPattern ? new RegExp(`(${wrapped})`, matchCase ? "" : "i") : null;
+          } catch { splitter = null; }
+
+          const openMatch = async (path: string, line: number, col: number, matchIndex: number) => {
+            const editorSearch = useEditorSearchStore.getState();
+            // Set search params before opening the tab so CM knows what to highlight.
+            editorSearch.setTerm(searchQuery);
+            editorSearch.setMatchCase(matchCase);
+            editorSearch.setMatchWholeWord(matchWholeWord);
+            editorSearch.setUseRegex(useRegex);
+            editorSearch.setUseMultiline(useMultiline);
+            const newTab = {
+              id: crypto.randomUUID(),
+              type: "document" as const,
+              title: path.split("/").pop() || path,
+              source: path,
+              directory: null,
             };
+            const response = await window.electron?.state.addPanelTab("main", newTab);
+            const tabId = response?.tabId;
+            if (tabId) await activateTab({ panelId: "main", tabId });
+            // Set all target info AFTER activateTab in the same React batch as
+            // requestOpenSearchPanel so navigation effects fire last and win.
+            editorSearch.setTargetLine(line);
+            editorSearch.setTargetCol(col);
+            editorSearch.setTargetPath(path);
+            editorSearch.setTargetMatchIndex(matchIndex);
+            editorSearch.requestOpenSearchPanel();
+          };
 
-            // Group all matches by file path.
-            const byFile = searchResults.reduce<Record<string, typeof searchResults>>((acc, r) => {
-              (acc[r.path] ??= []).push(r);
-              return acc;
-            }, {});
+          // Group all matches by file path.
+          const byFile = searchResults.reduce<Record<string, typeof searchResults>>((acc, r) => {
+            (acc[r.path] ??= []).push(r);
+            return acc;
+          }, {});
 
-            return (
-              <div className="space-y-1">
-                {Object.entries(byFile).map(([filePath, matches]) => (
-                  <div key={filePath} className="rounded-lg border border-border overflow-hidden">
-                    {/* File header — clicking opens to the first match in the file */}
-                    <div
-                      className="flex items-center gap-2 px-3 py-1.5 bg-active cursor-pointer hover:bg-hover transition-colors"
-                      onClick={() => openMatch(filePath, matches[0].line, matches[0].col, 0)}
-                    >
-                      <span className="text-xs font-medium text-text truncate flex-1">{filePath.split("/").pop() || filePath}</span>
-                      <span className="text-xs text-comment shrink-0">{matches.length} match{matches.length !== 1 ? "es" : ""}</span>
-                    </div>
-                    {/* All individual line matches */}
-                    {matches.map(({ line, col, preview }, matchIndex) => (
-                      <div
-                        key={`${line}:${col}`}
-                        className="flex items-start gap-3 px-3 py-1.5 border-t border-border cursor-pointer hover:bg-hover transition-colors"
-                        onClick={() => openMatch(filePath, line, col, matchIndex)}
-                      >
-                        <span className="text-xs text-comment shrink-0 tabular-nums w-5 text-right">{line}</span>
-                        <p className="text-xs text-text break-all leading-5">
-                          {splitter
-                            ? preview.trim().split(splitter).map((part, idx) => (
-                                <React.Fragment key={idx}>
-                                  {idx % 2 === 1 ? <mark className="bg-accent/60 text-text rounded px-0.5">{part}</mark> : part}
-                                </React.Fragment>
-                              ))
-                            : preview.trim()}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
-        </div>
-      ) : (
-        <div ref={ref} className="flex-1 overflow-hidden">
-          <TreeActionsContext.Provider value={{ expandAllRecursive, collapseAllFromFolder }}>
-            <DragOverContext.Provider value={{ dragOverParentId, setDragOverParentId }}>
-              <div
-                ref={dndRootElement}
-                onKeyDown={async (e) => {
-                  if (e.key !== "Enter") return;
-                  const focused = treeRef.current?.focusedNode ?? treeRef.current?.selectedNodes?.[0];
-                  if (!focused || focused.data.isTemporary) return;
-                  e.preventDefault();
-                  await handleActivate(focused);
-                }}
-              >
-                {treeData && (
-                  <Tree
-                    dndRootElement={dndRootElement.current}
-                    ref={treeRef}
-                    data={treeData}
-                    width={width}
-                    height={height}
-                    rowHeight={24}
-                    indent={12}
-                    idAccessor="path"
-                    initialOpenState={getInitialOpenState(data as ExtendedFileTree)}
-                    openByDefault={false}
-                    onMove={handleMove}
-                    disableDrag={() => false}
-                    onCreate={handleCreate}
-                    disableDrop={({ parentNode, dragNodes }) => {
-                      if (!parentNode) return true;
-                      return dragNodes.some((node) => node.data.parent === parentNode.data.path);
-                    }}
+          return (
+            <div className="space-y-1">
+              {Object.entries(byFile).map(([filePath, matches]) => (
+                <div key={filePath} className="rounded-lg border border-border overflow-hidden">
+                  {/* File header — clicking opens to the first match in the file */}
+                  <div
+                    className="flex items-center gap-2 px-3 py-1.5 bg-active cursor-pointer hover:bg-hover transition-colors"
+                    onClick={() => openMatch(filePath, matches[0].line, matches[0].col, 0)}
                   >
-                    {(nodeProps) => (
-                      <TreeNode
-                        {...nodeProps}
-                        activeFile={activeFile}
-                        removeTemporaryNode={handleRemoveTemporaryNode}
-                        onFolderToggle={expandLazyNode}
-                        refreshDir={refreshDir}
-                        expandedDirsRef={expandedDirsRef}
-                        treeRef={treeRef}
-                      />
-                    )}
-                  </Tree>
-                )}
-              </div>
-            </DragOverContext.Provider>
-          </TreeActionsContext.Provider>
-          {/* Empty space at bottom to ensure context menu is always accessible */}
-          <div
-            className="min-h-[200px]"
-            onContextMenu={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              if (data) {
-                window.electron?.files.showFileContextMenu({
-                  path: data.path,
-                  type: data.type,
-                  name: data.name,
-                  isProjectRoot: true,
-                });
-              }
-            }}
-          />
-        </div>
-      )}
+                    <span className="text-xs font-medium text-text truncate flex-1">{filePath.split("/").pop() || filePath}</span>
+                    <span className="text-xs text-comment shrink-0">{matches.length} match{matches.length !== 1 ? "es" : ""}</span>
+                  </div>
+                  {/* All individual line matches */}
+                  {matches.map(({ line, col, preview }, matchIndex) => (
+                    <div
+                      key={`${line}:${col}`}
+                      className="flex items-start gap-3 px-3 py-1.5 border-t border-border cursor-pointer hover:bg-hover transition-colors"
+                      onClick={() => openMatch(filePath, line, col, matchIndex)}
+                    >
+                      <span className="text-xs text-comment shrink-0 tabular-nums w-5 text-right">{line}</span>
+                      <p className="text-xs text-text break-all leading-5">
+                        {splitter
+                          ? preview.trim().split(splitter).map((part, idx) => (
+                              <React.Fragment key={idx}>
+                                {idx % 2 === 1 ? <mark className="bg-accent/60 text-text rounded px-0.5">{part}</mark> : part}
+                              </React.Fragment>
+                            ))
+                          : preview.trim()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* File System Tree — always rendered, visibility controlled by CSS */}
+      <div ref={ref} className={cn("flex-1 overflow-hidden", storeIsSearching && "hidden")}>
+        <TreeActionsContext.Provider value={{ expandAllRecursive, collapseAllFromFolder }}>
+          <DragOverContext.Provider value={{ dragOverParentId, setDragOverParentId }}>
+            <div
+              ref={dndRootElement}
+              onKeyDown={async (e) => {
+                if (e.key !== "Enter") return;
+                const focused = treeRef.current?.focusedNode ?? treeRef.current?.selectedNodes?.[0];
+                if (!focused || focused.data.isTemporary) return;
+                e.preventDefault();
+                await handleActivate(focused);
+              }}
+            >
+              {treeData && (
+                <Tree
+                  dndRootElement={dndRootElement.current}
+                  ref={treeRef}
+                  data={treeData}
+                  width={width}
+                  height={height}
+                  rowHeight={24}
+                  indent={12}
+                  idAccessor="path"
+                  initialOpenState={getInitialOpenState(data as ExtendedFileTree)}
+                  openByDefault={false}
+                  onMove={handleMove}
+                  disableDrag={() => false}
+                  onCreate={handleCreate}
+                  disableDrop={({ parentNode, dragNodes }) => {
+                    if (!parentNode) return true;
+                    return dragNodes.some((node) => node.data.parent === parentNode.data.path);
+                  }}
+                >
+                  {(nodeProps) => (
+                    <TreeNode
+                      {...nodeProps}
+                      activeFile={activeFile}
+                      removeTemporaryNode={handleRemoveTemporaryNode}
+                      onFolderToggle={expandLazyNode}
+                      refreshDir={refreshDir}
+                      expandedDirsRef={expandedDirsRef}
+                      treeRef={treeRef}
+                    />
+                  )}
+                </Tree>
+              )}
+            </div>
+          </DragOverContext.Provider>
+        </TreeActionsContext.Provider>
+        {/* Empty space at bottom to ensure context menu is always accessible */}
+        <div
+          className="min-h-[200px]"
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (data) {
+              window.electron?.files.showFileContextMenu({
+                path: data.path,
+                type: data.type,
+                name: data.name,
+                isProjectRoot: true,
+              });
+            }
+          }}
+        />
+      </div>
     </div>
   );
 };

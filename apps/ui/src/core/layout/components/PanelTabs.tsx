@@ -20,6 +20,7 @@ import {
   Blocks,
   Terminal,
   Lock,
+  ChevronDown,
 } from "lucide-react";
 import { useProjectLock } from "@/core/file-system/hooks";
 import { cn, isMac } from "@/core/lib/utils";
@@ -401,7 +402,21 @@ export const PanelTabs = ({ panel }: { panel: string }) => {
   const { mutate: duplicatePanelTab } = useDuplicatePanelTab();
   const { mutate: reloadPanelTab } = useReloadPanelTab();
   const tabContainerRef = useRef<HTMLDivElement>(null);
+  const tabsDropdownRef = useRef<HTMLDivElement>(null);
   const { bottomPanelRef, closeBottomPanel } = usePanelStore();
+
+  const [showTabsDropdown, setShowTabsDropdown] = useState(false);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!showTabsDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (tabsDropdownRef.current && !tabsDropdownRef.current.contains(e.target as Node))
+        setShowTabsDropdown(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showTabsDropdown]);
 
   // Drag and drop state
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
@@ -554,16 +569,41 @@ export const PanelTabs = ({ panel }: { panel: string }) => {
       const target = e.target as HTMLElement;
       const isInCodeEditor = target?.closest('.cm-editor, .txt-editor');
 
-      // Allow Cmd+W to work even in CodeMirror/txt editors
-      // But block other shortcuts when in code editors
+      // Allow tab navigation shortcuts to work even in CodeMirror/txt editors
+      // These shortcuts should always be accessible regardless of focus
       const isCloseTabShortcut = matchesShortcut("CloseTab", e);
+      const isNextTabShortcut = matchesShortcut("NextTab", e);
+      const isPrevTabShortcut = matchesShortcut("PrevTab", e);
+      const isAllowedInEditor = isCloseTabShortcut || isNextTabShortcut || isPrevTabShortcut;
 
-      if (isInCodeEditor && !isCloseTabShortcut) {
+      if (isInCodeEditor && !isAllowedInEditor) {
         return;
       }
 
       // Only handle shortcuts for main and bottom panels
       if (panel !== "main" && panel !== "bottom") return;
+
+      // Navigate to next tab (Cmd/Ctrl+Shift+])
+      if (matchesShortcut("NextTab", e)) {
+        e.preventDefault();
+        if (tabs?.tabs?.length && tabs.activeTabId) {
+          const idx = tabs.tabs.findIndex((t: Tab) => t.id === tabs.activeTabId);
+          const next = tabs.tabs[(idx + 1) % tabs.tabs.length];
+          activateTab({ panelId: panel, tabId: next.id });
+        }
+        return;
+      }
+
+      // Navigate to previous tab (Cmd/Ctrl+Shift+[)
+      if (matchesShortcut("PrevTab", e)) {
+        e.preventDefault();
+        if (tabs?.tabs?.length && tabs.activeTabId) {
+          const idx = tabs.tabs.findIndex((t: Tab) => t.id === tabs.activeTabId);
+          const prev = tabs.tabs[(idx - 1 + tabs.tabs.length) % tabs.tabs.length];
+          activateTab({ panelId: panel, tabId: prev.id });
+        }
+        return;
+      }
 
       // Handle Reload Tab shortcut (Cmd/Ctrl + R)
       if (matchesShortcut("ReloadTab", e)) {
@@ -626,72 +666,115 @@ export const PanelTabs = ({ panel }: { panel: string }) => {
       rPressed.current = false;
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("keydown", handleKeyDown, true);  // Use capture phase
+    window.addEventListener("keyup", handleKeyUp, true);     // Use capture phase
     window.addEventListener("blur", handleBlur);
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
       window.removeEventListener("blur", handleBlur);
     };
   }, [tabs, panel, closeTab]);
 
   return (
-    <div
-      ref={tabContainerRef}
-      className="flex items-center h-full flex-1 overflow-x-auto relative no-scrollbar"
-    >
-      {/* Drag Overlay Preview */}
-      {draggedTabId && dragPreviewPosition && (
-        <div
-          className="fixed pointer-events-none z-50"
-          style={{
-            left: `${dragPreviewPosition.x || "-500"}px`,
-            top: `${dragPreviewPosition.y || "-500"}px`,
-          }}
-        >
-          <div className="flex items-center gap-x-2 px-3 py-1.5 bg-editor border border-accent rounded shadow-lg opacity-90">
-            <div className="w-2 h-2">
-              {!hideUnsavedIndicator &&
-                tabs.tabs.find(t => t.id === draggedTabId)?.type === "document" &&
-                useEditorStore.getState().unsaved[draggedTabId] && (
-                  <div className="w-2 h-2 rounded-full bg-accent" />
-                )}
+    <div className="flex h-full flex-1 overflow-hidden">
+      {/* Scrollable tab strip */}
+      <div
+        ref={tabContainerRef}
+        className="flex items-center h-full flex-1 overflow-x-auto relative no-scrollbar"
+      >
+        {/* Drag Overlay Preview */}
+        {draggedTabId && dragPreviewPosition && (
+          <div
+            className="fixed pointer-events-none z-50"
+            style={{
+              left: `${dragPreviewPosition.x || "-500"}px`,
+              top: `${dragPreviewPosition.y || "-500"}px`,
+            }}
+          >
+            <div className="flex items-center gap-x-2 px-3 py-1.5 bg-editor border border-accent rounded shadow-lg opacity-90">
+              <div className="w-2 h-2">
+                {!hideUnsavedIndicator &&
+                  tabs.tabs.find(t => t.id === draggedTabId)?.type === "document" &&
+                  useEditorStore.getState().unsaved[draggedTabId] && (
+                    <div className="w-2 h-2 rounded-full bg-accent" />
+                  )}
+              </div>
+              <span className="text-fg text-sm font-medium whitespace-nowrap">
+                {tabs.tabs.find(t => t.id === draggedTabId)?.title}
+              </span>
             </div>
-            <span className="text-fg text-sm font-medium whitespace-nowrap">
-              {tabs.tabs.find(t => t.id === draggedTabId)?.title}
-            </span>
           </div>
+        )}
+
+        {tabs?.tabs?.map((tab: Tab) => (
+          <TabComponent
+            key={tab.id}
+            tab={tab}
+            panel={panel}
+            activateTab={(tabId) => activateTab({ panelId: panel, tabId })}
+            closeTabs={(panelId, tabs) => closeTabs({ panelId, tabs })}
+            closeTab={(panelId, tabId, unsavedContent) => closeTab({ panelId, tabId, unsavedContent })}
+            duplicateTab={(tabId) => duplicatePanelTab({ panelId: panel, tabId })}
+            reloadTab={(tabId) => reloadPanelTab({ panelId: panel, tabId, source: tab.source ?? undefined })}
+            tabs={tabs.tabs}
+            isActive={tab.id === tabs?.activeTabId}
+            isLastTerminalTab={tabs.tabs?.length === 1 && tab.type === "terminal"}
+            currentActiveTabId={tabs?.activeTabId || ''}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDrag={handleDrag}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            onDragLeave={handleDragLeave}
+            isDragging={draggedTabId === tab.id}
+            dragOverPosition={dragOverTabId === tab.id ? dragOverPosition : null}
+            hideUnsavedIndicator={hideUnsavedIndicator}
+          />
+        ))}
+        <div className="flex-1 border-b border-border h-full"></div>
+      </div>
+
+      {/* All-tabs dropdown — shows every tab regardless of scroll position */}
+      {tabs?.tabs?.length > 0 && (
+        <div ref={tabsDropdownRef} className="flex-shrink-0 border-b border-l border-border flex items-center">
+          <Tip label={<span className="flex items-center gap-2"><span>All Tabs</span></span>} side="bottom">
+            <button
+              className="h-full px-2 flex items-center text-comment hover:bg-active hover:text-text transition-colors"
+              onClick={() => setShowTabsDropdown((v) => !v)}
+            >
+              <ChevronDown size={12} className={cn("transition-transform", showTabsDropdown && "rotate-180")} />
+            </button>
+          </Tip>
+          {showTabsDropdown && (
+            <div className="absolute right-0 top-full mt-0.5 w-72 bg-panel border border-border rounded-lg shadow-xl z-[100] py-1 overflow-y-auto max-h-96">
+              {tabs.tabs.map((tab: Tab) => {
+                const isActive = tab.id === tabs?.activeTabId;
+                const hasUnsaved = !hideUnsavedIndicator && tab.type === "document" && !!useEditorStore.getState().unsaved[tab.id];
+                return (
+                  <div
+                    key={tab.id}
+                    className={cn(
+                      "flex items-center gap-2.5 px-3 py-1.5 cursor-pointer text-sm transition-colors",
+                      isActive ? "bg-active text-text" : "text-comment hover:bg-active/60 hover:text-text"
+                    )}
+                    onClick={() => {
+                      activateTab({ panelId: panel, tabId: tab.id });
+                      setShowTabsDropdown(false);
+                    }}
+                  >
+                    <span className="flex-shrink-0 opacity-70">{getTabIcon(tab)}</span>
+                    <span className="flex-1 truncate font-mono text-xs">{tab.title}</span>
+                    {hasUnsaved && <div className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />}
+                    {isActive && <div className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
-
-      {tabs?.tabs?.map((tab: Tab) => (
-        <TabComponent
-          key={tab.id}
-          tab={tab}
-          panel={panel}
-          activateTab={(tabId) => activateTab({ panelId: panel, tabId })}
-          closeTabs={(panelId, tabs) => closeTabs({ panelId, tabs })}
-          closeTab={(panelId, tabId, unsavedContent) => closeTab({ panelId, tabId, unsavedContent })}
-          duplicateTab={(tabId) => duplicatePanelTab({ panelId: panel, tabId })}
-          reloadTab={(tabId) => reloadPanelTab({ panelId: panel, tabId, source: tab.source ?? undefined })}
-          tabs={tabs.tabs}
-          isActive={tab.id === tabs?.activeTabId}
-          isLastTerminalTab={tabs.tabs?.length === 1 && tab.type === "terminal"}
-          currentActiveTabId={tabs?.activeTabId || ''}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDrag={handleDrag}
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
-          onDragLeave={handleDragLeave}
-          isDragging={draggedTabId === tab.id}
-          dragOverPosition={dragOverTabId === tab.id ? dragOverPosition : null}
-          hideUnsavedIndicator={hideUnsavedIndicator}
-        />
-      ))}
-      <div className="flex-1 border-b border-border h-full"></div>
     </div>
   );
 };

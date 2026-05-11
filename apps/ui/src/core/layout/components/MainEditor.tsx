@@ -90,7 +90,7 @@ export const MainEditor = ({ bottomPanelProps, rightPanelProps }: MainEditorProp
   };
 
   const editorToolbar = (
-    <div className="h-8 flex justify-between bg-bg">
+    <div className="relative h-8 flex justify-between bg-bg">
       <div className="flex flex-none"></div>
       <PanelTabs panel="main" />
       <div className=" flex border-l border-b border-border">
