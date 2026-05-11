@@ -273,8 +273,8 @@ export const MainEditor = ({ bottomPanelProps, rightPanelProps }: MainEditorProp
 
             {/* Terminal Panel */}
             <Panel {...bottomPanelProps}>
-              <div className="h-full border-t border-border">
-                <div className="h-8 flex justify-between bg-panel">
+              <div className="h-full border-t border-border flex flex-col">
+                <div className="flex-none h-8 flex justify-between bg-panel">
                   <PanelTabs panel="bottom" />
                   <div className="flex border-l border-b border-border">
                     <button className="px-2 hover:bg-active text-comment" onClick={() => newTerminalTab("bottom")}>
@@ -282,7 +282,9 @@ export const MainEditor = ({ bottomPanelProps, rightPanelProps }: MainEditorProp
                     </button>
                   </div>
                 </div>
-                <PanelContent panelId="bottom" />
+                <div className="flex-1 min-h-0">
+                  <PanelContent panelId="bottom" />
+                </div>
               </div>
             </Panel>
           </PanelGroup>
