@@ -37,6 +37,7 @@ export interface DocumentState {
 export interface SearchResult {
   path: string;
   line: number;
+  col: number;
   preview: string;
 }
 

@@ -342,6 +342,7 @@ const VoidenEditorInner = ({
   const setUnifiedSearchActive = useSearchStore((s) => s.setUnifiedSearchActive);
   const [matchPositions, setMatchPositions] = useState<UnifiedMatch[]>([]);
   const [currentMatch, setCurrentMatch] = useState(-1);
+  const storeTargetMatchIndex = useSearchStore((s) => s.targetMatchIndex);
 
   // Auto-enable multiline when a literal newline is pasted/entered.
   useEffect(() => {
@@ -1378,6 +1379,17 @@ const VoidenEditorInner = ({
     if (!showFind || !editor || matchPositions.length === 0) return;
     navigateToMatch(0, false, false);
   }, [showFind, editor]);
+
+  // When a global search result is clicked, jump to the exact match.
+  // Defined last so it fires after the default match-0 effects and wins.
+  // Fires on both storeTargetMatchIndex change (click) and matchPositions change
+  // (matches computed after panel opens) to handle the race either way.
+  useEffect(() => {
+    if (!isActive || storeTargetMatchIndex === null || matchPositions.length === 0 || !editor) return;
+    const idx = Math.min(storeTargetMatchIndex, matchPositions.length - 1);
+    useSearchStore.getState().setTargetMatchIndex(null);
+    navigateToMatch(idx, false, true);
+  }, [storeTargetMatchIndex, matchPositions, isActive, editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFindPrevious = () => {
     if (matchPositions.length === 0 || !editor) return;

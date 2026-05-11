@@ -1223,7 +1223,7 @@ export const FileSystemList = () => {
     let firstResult = true;
     const unsubResult = window.electron?.onSearchResult?.((data) => {
       if (data.searchId !== currentId) return;
-      const key = `${data.result.path}:${data.result.line}`;
+      const key = `${data.result.path}:${data.result.line}:${data.result.col}`;
       if (!seenSearchResultsRef.current.has(key)) {
         seenSearchResultsRef.current.add(key);
         if (firstResult) {
@@ -1875,7 +1875,10 @@ export const FileSystemList = () => {
         </div>
       )}
       {storeIsSearching ? (
-        <div className="flex flex-col flex-1 overflow-y-auto p-2">
+        <div
+          className="flex flex-col flex-1 overflow-y-auto p-2"
+          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        >
           {searchError && <div className="text-red-500 text-sm">Error running search: {searchError}</div>}
           {!searchError && searchQuery && (() => {
             const matchCount = searchResults.length;
@@ -1889,9 +1892,6 @@ export const FileSystemList = () => {
             );
           })()}
           {searchResults.length > 0 && (() => {
-            // rg reports one result per matched line; for multi-line queries
-            // the preview is still a single line, so highlight using the
-            // first non-empty line of the pattern.
             const firstLine = searchQuery.split(/\r?\n/).find((l) => l.length > 0) ?? "";
             const rawPattern = useRegex
               ? firstLine
@@ -1900,50 +1900,72 @@ export const FileSystemList = () => {
             let splitter: RegExp | null = null;
             try {
               splitter = rawPattern ? new RegExp(`(${wrapped})`, matchCase ? "" : "i") : null;
-            } catch {
-              splitter = null;
-            }
+            } catch { splitter = null; }
+
+            const openMatch = async (path: string, line: number, col: number, matchIndex: number) => {
+              const editorSearch = useEditorSearchStore.getState();
+              // Set search params before opening the tab so CM knows what to highlight.
+              editorSearch.setTerm(searchQuery);
+              editorSearch.setMatchCase(matchCase);
+              editorSearch.setMatchWholeWord(matchWholeWord);
+              editorSearch.setUseRegex(useRegex);
+              editorSearch.setUseMultiline(useMultiline);
+              const newTab = {
+                id: crypto.randomUUID(),
+                type: "document" as const,
+                title: path.split("/").pop() || path,
+                source: path,
+                directory: null,
+              };
+              const response = await window.electron?.state.addPanelTab("main", newTab);
+              const tabId = response?.tabId;
+              if (tabId) await activateTab({ panelId: "main", tabId });
+              // Set all target info AFTER activateTab in the same React batch as
+              // requestOpenSearchPanel so navigation effects fire last and win.
+              editorSearch.setTargetLine(line);
+              editorSearch.setTargetCol(col);
+              editorSearch.setTargetPath(path);
+              editorSearch.setTargetMatchIndex(matchIndex);
+              editorSearch.requestOpenSearchPanel();
+            };
+
+            // Group all matches by file path.
+            const byFile = searchResults.reduce<Record<string, typeof searchResults>>((acc, r) => {
+              (acc[r.path] ??= []).push(r);
+              return acc;
+            }, {});
+
             return (
-              <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                {searchResults.map(({ path, line, preview }) => (
-                  <div
-                    key={`${path}:${line}`}
-                    className="p-3 bg-active rounded-lg border border-gray-200 hover:bg-transparent transition cursor-pointer"
-                    onClick={async () => {
-                      const editorSearch = useEditorSearchStore.getState();
-                      editorSearch.setTerm(searchQuery);
-                      editorSearch.setMatchCase(matchCase);
-                      editorSearch.setMatchWholeWord(matchWholeWord);
-                      editorSearch.setUseRegex(useRegex);
-                      editorSearch.setUseMultiline(useMultiline);
-                      const newTab = {
-                        id: crypto.randomUUID(),
-                        type: "document" as const,
-                        title: path.split("/").pop() || path,
-                        source: path,
-                        directory: null,
-                      };
-                      const response = await window.electron.state.addPanelTab("main", newTab);
-                      const tabId = response?.tabId;
-                      if (tabId) {
-                        await activateTab({ panelId: "main", tabId });
-                      }
-                      editorSearch.requestOpenSearchPanel();
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs text-gray-300 truncate">{path.split("/").pop() || path}</span>
-                      <span className="text-xs text-gray-300">Line {line}</span>
+              <div className="space-y-1">
+                {Object.entries(byFile).map(([filePath, matches]) => (
+                  <div key={filePath} className="rounded-lg border border-border overflow-hidden">
+                    {/* File header — clicking opens to the first match in the file */}
+                    <div
+                      className="flex items-center gap-2 px-3 py-1.5 bg-active cursor-pointer hover:bg-hover transition-colors"
+                      onClick={() => openMatch(filePath, matches[0].line, matches[0].col, 0)}
+                    >
+                      <span className="text-xs font-medium text-text truncate flex-1">{filePath.split("/").pop() || filePath}</span>
+                      <span className="text-xs text-comment shrink-0">{matches.length} match{matches.length !== 1 ? "es" : ""}</span>
                     </div>
-                    <p className="mt-1 text-sm text-white break-words">
-                      {splitter
-                        ? preview.split(splitter).map((part, idx) => (
-                            <React.Fragment key={idx}>
-                              {idx % 2 === 1 ? <mark className="bg-accent text-black rounded">{part}</mark> : part}
-                            </React.Fragment>
-                          ))
-                        : preview}
-                    </p>
+                    {/* All individual line matches */}
+                    {matches.map(({ line, col, preview }, matchIndex) => (
+                      <div
+                        key={`${line}:${col}`}
+                        className="flex items-start gap-3 px-3 py-1.5 border-t border-border cursor-pointer hover:bg-hover transition-colors"
+                        onClick={() => openMatch(filePath, line, col, matchIndex)}
+                      >
+                        <span className="text-xs text-comment shrink-0 tabular-nums w-5 text-right">{line}</span>
+                        <p className="text-xs text-text break-all leading-5">
+                          {splitter
+                            ? preview.trim().split(splitter).map((part, idx) => (
+                                <React.Fragment key={idx}>
+                                  {idx % 2 === 1 ? <mark className="bg-accent/60 text-text rounded px-0.5">{part}</mark> : part}
+                                </React.Fragment>
+                              ))
+                            : preview.trim()}
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>

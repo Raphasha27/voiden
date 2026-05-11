@@ -23,10 +23,18 @@ interface SearchStore {
     statusTick: number
     callbacks: SearchCallbacks | null
     openPanelTick: number
+    targetLine: number | null
+    targetCol: number | null
+    targetPath: string | null
+    targetMatchIndex: number | null
     currentLinkedPmNodePos: number | null
     currentLinkedBlockUid: string | null
     currentLinkedLocalIndex: number
     setTerm: (t: string) => void
+    setTargetLine: (line: number | null) => void
+    setTargetCol: (col: number | null) => void
+    setTargetPath: (path: string | null) => void
+    setTargetMatchIndex: (index: number | null) => void
     setReplaceTerm: (r: string) => void
     setMatchCase: (c: boolean) => void
     setMatchWholeWord: (w: boolean) => void
@@ -59,6 +67,10 @@ export const useSearchStore = create<SearchStore>(set => ({
     statusTick: 0,
     callbacks: null,
     openPanelTick: 0,
+    targetLine: null,
+    targetCol: null,
+    targetPath: null,
+    targetMatchIndex: null,
     currentLinkedPmNodePos: null,
     currentLinkedBlockUid: null,
     currentLinkedLocalIndex: 0,
@@ -74,6 +86,10 @@ export const useSearchStore = create<SearchStore>(set => ({
     bumpStatusTick: () => set(s => ({ statusTick: s.statusTick + 1 })),
     registerSearchCallbacks: callbacks => set({ callbacks }),
     unregisterSearchCallbacks: () => set({ callbacks: null, status: '' }),
+    setTargetLine: targetLine => set({ targetLine }),
+    setTargetCol: targetCol => set({ targetCol }),
+    setTargetPath: targetPath => set({ targetPath }),
+    setTargetMatchIndex: targetMatchIndex => set({ targetMatchIndex }),
     requestOpenSearchPanel: () => set(s => ({ openPanelTick: s.openPanelTick + 1, isOpen: true })),
     setIsOpen: isOpen => set({ isOpen }),
     setCurrentLinkedPmNodePos: currentLinkedPmNodePos => set({ currentLinkedPmNodePos }),
