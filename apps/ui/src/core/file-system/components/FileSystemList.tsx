@@ -995,55 +995,57 @@ export const FileSystemList = () => {
     setIsTreeBusy(true);
     const frame = () => new Promise<void>((resolve) => requestAnimationFrame(resolve));
 
-    // Phase 1 — one IPC call gets the entire subtree at once.
-    // Previously this was N calls (one per directory), causing N round-trips
-    // and N separate IPC-triggered refreshes. Now it's a single round-trip.
-    const allChildren = await ipcExpandDirAll(startPath);
+    try {
+      // Phase 1 — one IPC call gets the entire subtree at once.
+      // Previously this was N calls (one per directory), causing N round-trips
+      // and N separate IPC-triggered refreshes. Now it's a single round-trip.
+      const allChildren = await ipcExpandDirAll(startPath);
 
-    if (!allChildren || Object.keys(allChildren).length === 0) {
-      setIsTreeBusy(false);
-      return;
-    }
-
-    // Rebuild BFS level order from the returned flat map so we can inject
-    // and open parents before children (injectChildren requires parent first).
-    const leveledPaths: string[][] = [];
-    let currentLevel = [startPath];
-    while (currentLevel.length > 0) {
-      leveledPaths.push([...currentLevel]);
-      const nextLevel: string[] = [];
-      for (const dirPath of currentLevel) {
-        for (const child of allChildren[dirPath] ?? []) {
-          if (child.type === "folder") nextLevel.push(child.path);
-        }
+      if (!allChildren || Object.keys(allChildren).length === 0) {
+        setIsTreeBusy(false);
+        return;
       }
-      currentLevel = nextLevel;
-    }
 
-    // Phase 2 — inject all data in one setTreeData call (one React render).
-    setTreeData((prev) => {
-      let updated = prev;
+      // Rebuild BFS level order from the returned flat map so we can inject
+      // and open parents before children (injectChildren requires parent first).
+      const leveledPaths: string[][] = [];
+      let currentLevel = [startPath];
+      while (currentLevel.length > 0) {
+        leveledPaths.push([...currentLevel]);
+        const nextLevel: string[] = [];
+        for (const dirPath of currentLevel) {
+          for (const child of allChildren[dirPath] ?? []) {
+            if (child.type === "folder") nextLevel.push(child.path);
+          }
+        }
+        currentLevel = nextLevel;
+      }
+
+      // Phase 2 — inject all data in one setTreeData call (one React render).
+      setTreeData((prev) => {
+        let updated = prev;
+        for (const levelPaths of leveledPaths) {
+          for (const dirPath of levelPaths) {
+            const children = allChildren[dirPath];
+            if (children) updated = injectChildren(updated, dirPath, children);
+          }
+        }
+        return updated;
+      });
+      await frame();
+
+      // Phase 3 — open level by level. react-arborist.get() is visibility-limited
+      // so we must open parents before children can be found.
       for (const levelPaths of leveledPaths) {
         for (const dirPath of levelPaths) {
-          const children = allChildren[dirPath];
-          if (children) updated = injectChildren(updated, dirPath, children);
+          expandedDirsRef.current.add(dirPath);
+          treeRef.current?.get(dirPath)?.open();
         }
+        await frame();
       }
-      return updated;
-    });
-    await frame();
-
-    // Phase 3 — open level by level. react-arborist.get() is visibility-limited
-    // so we must open parents before children can be found.
-    for (const levelPaths of leveledPaths) {
-      for (const dirPath of levelPaths) {
-        expandedDirsRef.current.add(dirPath);
-        treeRef.current?.get(dirPath)?.open();
-      }
-      await frame();
+    } finally {
+      setIsTreeBusy(false);
     }
-
-    setIsTreeBusy(false);
   }, []);
 
   const collapseAllFromFolder = useCallback(async (folderNode: NodeApi<ExtendedFileTree>) => {
