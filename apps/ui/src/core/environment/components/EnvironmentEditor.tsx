@@ -1094,7 +1094,7 @@ export const EnvironmentEditor = ({ tabId }: { tabId: string }) => {
     };
     const handleScroll = () => {
       if (isUserScrolling) { currentTarget = scrollEl.scrollTop; setScrollPosition(tabId, scrollEl.scrollTop); }
-      else applySavedScroll();
+      // Programmatic scrolls must not be fought — initial rAF restoration handles tab-switch restores.
     };
     scrollEl.addEventListener("scroll", handleScroll, { passive: true });
     ["wheel", "touchmove", "keydown", "mousedown"].forEach((ev) =>
