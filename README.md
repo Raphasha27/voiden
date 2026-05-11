@@ -52,22 +52,67 @@
   </a>
 </p>
 
+<h2 align="center">Main Contributors</h2>
+
+<p align="center">
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/github/github-original.svg" width="14" />
+  <a href="https://github.com/lbenedetto">Lars Benedetto</a> ·
+  <a href="https://github.com/kaluvuri">kaluvuri</a> ·
+  <a href="https://github.com/jameesbrown">James Brown</a> ·
+  <a href="https://github.com/phurpa-tsering">Phurpa Tsering</a> ·
+  <a href="https://github.com/KrawMire">Anton Gavrilov</a>
+</p>
+
+<p align="center">
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/github/github-original.svg" width="14" />
+  <a href="https://github.com/edymusajev">Edy Musajev</a> ·
+  <a href="https://github.com/nikolasdimitr">nikolasdimitr</a> ·
+  <a href="https://github.com/dp1620">Dhruv</a> ·
+  <a href="https://github.com/davinder-sudo">davinder-sudo</a>
+</p>
+
+
 ![Voiden workspace showing requests, docs, and response panels](apps/electron/public/start-april18-1.png)
 
 ## Why Voiden
 
-Voiden is for developers, testers, and technical writers who want API work to feel like code instead of a SaaS dashboard.
+Voiden is an offline API client that helps developers build, test, collaborate and document APIs in one place. With a programmable interface (/slash commands) and an agent-friendly CLI, Voiden adapts to how engineers already work. Voiden is built with [Electron](https://www.electronjs.org/), Typescript and Javascript, and it doesnt require an account to use it. 
 
-- Keep requests, notes, and reusable API building blocks (endpoint, auth, params, body) in the same `.void` files.
+No telemetry, no VC funding, and no cloud lock-in.
+
+✨ Features:
+
+All Major API Protocols:
+
+- Supports REST, GraphQL, Grpc, Web-Sockets. All these are plugins that you can install or uninstall according to your needs. Community plugins available: https://voiden.md/plugins
+- Import collections from Postman and OpenAPI.
+
+Single Source of truth for all API work in the same file:
+
+- Keep API requests, tests, notes and docs together in the same executable`.void` files. Keep everything in one format and one workflow.
+- Requests can be composed by API building blocks (endpoint, auth, params, body). Decompose requests into blocks. Reuse the same blocks across files, like functions.
 - Work in Markdown and structured blocks instead of opaque collections locked inside an app.
-- Reuse headers, auth, bodies, and whole sections across files with linked blocks and linked files.
 - Test and document APIs without leaving the editor.
+
+Workflows:
+
+- Scripting: Execute JavaScript, Python, or Shell scripts before sending requests and after receiving responses.
+- Stitch runner: Batch-execute multiple .void files sequentially. Supports glob patterns, stop-on-failure, variable isolation, configurable delays, and environment selection.
+
+Collaboration:
+
 - Collaborate with Git branches and pull requests instead of proprietary team workspaces.
 - Stay local-first with no signup and no required cloud sync.
 
+AI Friendly:
+
+- No proprietary workspace. No binary exports. Pure text all the way down, diffable like code, greppable, AI-editable, and merge-friendly.
+- Supports Voiden skills for Claude and Codex agents. 
+
+
 ## Install
 
-**Current version:** `1.5.0`
+**Current version:** `1.6.1`
 
 Download installers for macOS, Windows, and Linux from [voiden.md/download](https://voiden.md/download).
 Direct downloads are available for Apple Silicon and Intel macOS, Windows `.exe`, and Linux `.deb`, `.rpm`, and `.AppImage` builds.
@@ -193,7 +238,6 @@ Voiden generates the document metadata and block IDs for you inside the app.
 - [Getting started](https://docs.voiden.md/docs/getting-started-section/intro)
 - [Download](https://voiden.md/download)
 - [Changelog](https://voiden.md/changelog)
-- [Blog](https://voiden.md/blog)
 
 ### Contributor docs
 
@@ -242,7 +286,7 @@ Voiden is built on [Electron](https://www.electronjs.org/). We are building some
 
 We also know Electron gets a bad reputation, often inherited from other API tools. Our take is that footprint matters, but stability, reliability, and cross-platform predictability matter more when users feel them every day. We would rather be transparent about resource usage and keep optimizing it than chase a lighter stack that breaks in subtle ways.
 
-Read the full reasoning here: [Why Voiden is Built on Electron?](https://docs.voiden.md/docs/getting-started-section/getting-started/why-electron).
+Read some more of our thoughts here: [Why Voiden is Built on Electron (and not Tauri)?](https://docs.voiden.md/docs/getting-started-section/getting-started/why-electron).
 
 ## Community
 
@@ -257,6 +301,15 @@ We welcome contributions. Start with:
 - [Contributing Guide](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Security Policy](SECURITY.md)
+
+## Useful Resources
+
+- [Community & Feedback](https://discord.com/invite/XSYCf7JF4F)
+- [Documentation](https://docs.voiden.md/docs/getting-started-section/intro/)
+- [Voiden vs Postman](https://voiden.md/comparison)
+- [Voiden Plugins](https://voiden.md/plugins)
+- [Blog and articles](https://voiden.md/blog)
+- [Privacy Policy](https://voiden.md/privacy)
 
 ## License
 
