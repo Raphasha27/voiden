@@ -162,8 +162,10 @@ export async function preSendScriptHook(context: any): Promise<void> {
     if (blockingErrors.length > 0) {
       if (!requestState.metadata) requestState.metadata = {};
       const msg = blockingErrors.map(e => `Line ${e.line}: ${e.message}`).join('\n');
-      requestState.metadata.preScriptError = `Script validation failed:\n${msg}`;
-      throw new Error(`Pre-request script blocked: ${blockingErrors[0].message}`);
+      const errMsg = `Script validation failed:\n${msg}`;
+      requestState.metadata.preScriptError = errMsg;
+      scriptLogStore.push('pre', [], errMsg, 1);
+      return;
     }
   }
 
@@ -253,7 +255,9 @@ export async function postProcessScriptHook(context: any): Promise<void> {
     const blockingErrors = errors.filter((e) => (e.severity || 'error') === 'error');
     if (blockingErrors.length > 0) {
       const msg = blockingErrors.map(e => `Line ${e.line}: ${e.message}`).join('\n');
-      responseState.metadata.postScriptError = `Script validation failed:\n${msg}`;
+      const errMsg = `Script validation failed:\n${msg}`;
+      responseState.metadata.postScriptError = errMsg;
+      scriptLogStore.push('post', [], errMsg, 1);
       return;
     }
   }
