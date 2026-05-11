@@ -26,6 +26,7 @@ export interface SearchPanelViewProps {
   multiline: boolean;
   showReplace: boolean;
   status?: string;
+  invalidRegex?: boolean;
   navDisabled?: boolean;
   replaceDisabled?: boolean;
   hideNav?: boolean;
@@ -63,7 +64,7 @@ const iconBtn = (disabled: boolean) =>
   );
 
 const inputClass =
-  "text-[13px] leading-[22px] px-2 py-0 bg-active border border-panel-border rounded resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent focus-visible:border-accent";
+  "text-[13px] leading-[22px] px-2 py-0 bg-active border border-border rounded resize-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent focus-visible:border-accent";
 
 export function SearchPanelView({
   findValue,
@@ -74,6 +75,7 @@ export function SearchPanelView({
   multiline,
   showReplace,
   status,
+  invalidRegex = false,
   navDisabled = false,
   replaceDisabled = false,
   hideNav = false,
@@ -159,6 +161,7 @@ export function SearchPanelView({
                 fieldSizing: "content",
                 maxHeight: "calc(4 * 1.5em + 0.5rem)",
                 ...(useRegex && findValue ? { color: "transparent", caretColor: "var(--fg-primary)" } : null),
+                ...(invalidRegex ? { borderColor: "var(--icon-danger)" } : null),
               } as React.CSSProperties}
             />
           </div>
@@ -202,7 +205,10 @@ export function SearchPanelView({
           )}
 
           {status && (
-            <span className="text-[13px] text-comment whitespace-nowrap shrink-0 mt-1">{status}</span>
+            <span
+              className={cn("text-[13px] whitespace-nowrap shrink-0 mt-1", !invalidRegex && "text-comment")}
+              style={invalidRegex ? { color: "var(--icon-danger)" } : undefined}
+            >{status}</span>
           )}
 
           <Tip label="Close (Esc)" side="bottom">

@@ -325,6 +325,7 @@ input[type="week"]::-webkit-datetime-edit-year-field:focus {
 
     /* Base color aliases */
     --ui-bg: var(--bg-primary, #1f2430);
+    --icon-danger: var(--error, #f27983);
     --editor-bg: var(--bg-primary, #1f2430);
     --code-bg: var(--bg-primary, #1f2430);
     --modal-bg: var(--bg-primary, #1f2430);

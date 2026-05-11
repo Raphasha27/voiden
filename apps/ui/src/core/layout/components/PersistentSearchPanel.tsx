@@ -40,6 +40,10 @@ export function PersistentSearchPanel() {
   let status = "";
   try { status = callbacks?.getStatus() ?? ""; } catch { status = "Invalid regex"; }
 
+  const isInvalidRegex = useRegex && !!term && (status === "Invalid regex" || (() => {
+    try { new RegExp(term); return false; } catch { return true; }
+  })());
+
   return (
     <SearchPanelView
       findValue={term}
@@ -50,6 +54,7 @@ export function PersistentSearchPanel() {
       multiline={useMultiline}
       showReplace={showReplace}
       status={status}
+      invalidRegex={isInvalidRegex}
       navDisabled={noQuery || !callbacks}
       replaceDisabled={noQuery || !callbacks}
       findInputRef={findInputRef}
