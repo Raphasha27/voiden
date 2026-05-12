@@ -16,14 +16,14 @@
         "Voiden Scripting documentation fully rewritten — corrected API reference for JavaScript, Python, and Shell with accurate property names, method signatures, assert operator table, per-language syntax comparison, and full shell bash function and environment variable reference"
       ],
       "Fixed": [
-        "Tab bar now scrolls to reveal the active tab when a file is opened from the left panel — the previous implementation used scrollIntoView() which affected page-level scroll instead of the tab strip, and fired before the tab element was in the DOM",
         "Path parameters with runtime and environment variables now resolve correctly — variable replacement logic was not being applied to path params in all cases",
         "Context menu now correctly identifies the block at the cursor position — previously the wrong block was targeted when the cursor was inside a table cell or at the boundary between blocks",
-        "Response panel node heights are now properly constrained relative to the panel height — response body, headers, and code blocks no longer overflow the panel on large payloads",
+        "Copying a large response body (e.g. 50k lines of JSON) now copies the full content — previously the clipboard only received the visible DOM text, which was limited to roughly 60 lines; the copy handler now reads the complete selection from the editor state",
+        "Response panel scrollbar no longer disappears when scrolling through large payloads — the panel container height constraints are now properly anchored so the scrollbar stays within the visible area throughout the full scroll range",
         "Runtime variables are now bound to the active environment they were captured in, rather than being written to the global scope",
         "Active environment no longer carries over when switching between projects — each project now opens with its own environment selection — contributed by KrawMire",
         "Environment editor no longer exhibits erratic scroll behaviour when editing values",
-        "Global search results are now visible, the context menu appears correctly, and jump-to-match navigation works as expected",
+        "Global search results are now visible, the context menu appears correctly",
         "Invalid regex patterns entered in the search bar no longer crash the editor rendering",
         "Environment naming conflicts, cross-project environment visibility, and the select button toggle state are now handled correctly",
         "Terminal tab is now correctly shown and hidden based on panel state",
