@@ -1,5 +1,39 @@
 [
   {
+    "version": "v1.6.2",
+    "date": "12/05/2026",
+    "title": "Tab Scrolling, Scripting Docs & Multi-Bug Fixes",
+    "description": "Patch release fixing the active tab not scrolling into view when files are opened from the left panel, correcting the Voiden Scripting skill documentation across all three languages, and resolving a batch of bugs in path param variable replacement, the response panel, runtime variable binding, environment editor scrolling, global search, terminal tab visibility, and the post-response script execution error.",
+    "icon": "Bug",
+    "iconColor": "text-red-400",
+    "bgColor": "bg-gradient-to-br from-slate-900 to-red-950",
+    "changes": {
+      "Added": [
+        "Keyboard shortcuts to cycle between open tabs — Cmd+Shift+] moves to the next tab and Cmd+Shift+[ moves to the previous tab, cycling around; shortcuts work even when focus is inside a code editor block",
+        "All-tabs dropdown in the tab bar — a button at the end of the tab strip opens a list of every open tab regardless of scroll position, making it easy to jump to any tab without scrolling"
+      ],
+      "Improved": [
+        "Voiden Scripting documentation fully rewritten — corrected API reference for JavaScript, Python, and Shell with accurate property names, method signatures, assert operator table, per-language syntax comparison, and full shell bash function and environment variable reference"
+      ],
+      "Fixed": [
+        "Tab bar now scrolls to reveal the active tab when a file is opened from the left panel — the previous implementation used scrollIntoView() which affected page-level scroll instead of the tab strip, and fired before the tab element was in the DOM",
+        "Path parameters with runtime and environment variables now resolve correctly — variable replacement logic was not being applied to path params in all cases",
+        "Context menu now correctly identifies the block at the cursor position — previously the wrong block was targeted when the cursor was inside a table cell or at the boundary between blocks",
+        "Response panel node heights are now properly constrained relative to the panel height — response body, headers, and code blocks no longer overflow the panel on large payloads",
+        "Runtime variables are now bound to the active environment they were captured in, rather than being written to the global scope",
+        "Active environment no longer carries over when switching between projects — each project now opens with its own environment selection — contributed by KrawMire",
+        "Environment editor no longer exhibits erratic scroll behaviour when editing values",
+        "Global search results are now visible, the context menu appears correctly, and jump-to-match navigation works as expected",
+        "Invalid regex patterns entered in the search bar no longer crash the editor rendering",
+        "Environment naming conflicts, cross-project environment visibility, and the select button toggle state are now handled correctly",
+        "Terminal tab is now correctly shown and hidden based on panel state",
+        "Post-response scripts no longer report an execution failed error immediately after a request completes",
+        "Expand All button in the file tree now works correctly",
+        "Button text colour now correctly follows the active theme — contributed by KrawMire"
+      ]
+    }
+  },
+  {
     "version": "v1.6.1",
     "date": "04/05/2026",
     "title": "OAuth HTTPS, Section Copy Fixes & Response Panel Polish",
