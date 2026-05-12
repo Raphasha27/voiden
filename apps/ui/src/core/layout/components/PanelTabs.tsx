@@ -544,22 +544,32 @@ export const PanelTabs = ({ panel }: { panel: string }) => {
     }
   }, []);
   useEffect(() => {
-    if (tabs?.activeTabId && tabContainerRef.current) {
-      const tabContainer = tabContainerRef.current;
-      const activeTab = tabContainer.querySelector(
-        `[data-tab-id="${tabs.activeTabId}"]`
+    if (!tabs?.activeTabId || !tabContainerRef.current) return;
+
+    const tabContainer = tabContainerRef.current;
+    const activeTabId = tabs.activeTabId;
+
+    const rafId = requestAnimationFrame(() => {
+      const activeTab = tabContainer.querySelector<HTMLElement>(
+        `[data-tab-id="${activeTabId}"]`
       );
-      if (activeTab) {
-        const containerRect = tabContainer.getBoundingClientRect();
-        const tabRect = activeTab.getBoundingClientRect();
-        const isOutOfView =
-          tabRect.left < containerRect.left || tabRect.right > containerRect.right;
-        if (isOutOfView) {
-          activeTab.scrollIntoView();
-        }
+      if (!activeTab) return;
+
+      const containerRect = tabContainer.getBoundingClientRect();
+      const tabRect = activeTab.getBoundingClientRect();
+
+      if (tabRect.left < containerRect.left) {
+        tabContainer.scrollLeft -= containerRect.left - tabRect.left;
+      } else if (tabRect.right > containerRect.right) {
+        tabContainer.scrollLeft += tabRect.right - containerRect.right;
       }
-    }
-  }, [tabs?.activeTabId]);
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  // tabs.tabs.length ensures the effect re-runs after the refetch lands and
+  // adds the new tab element to the DOM (activeTabId alone fires too early,
+  // before the tab list is refreshed from the server).
+  }, [tabs?.activeTabId, tabs?.tabs?.length]);
 
 
   useEffect(() => {
