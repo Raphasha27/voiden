@@ -13,7 +13,7 @@ interface TerminalManagerProps {
 
 export const TerminalManager = ({ terminalTabs, activeTabId }: TerminalManagerProps) => {
   return (
-    <div className="h-full w-full pb-8 ">
+    <div className="h-full w-full">
       <div
         style={{
           position: "relative",

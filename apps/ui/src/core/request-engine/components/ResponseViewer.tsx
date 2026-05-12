@@ -394,7 +394,7 @@ export const ResponseViewer = forwardRef<ResponseViewerHandle, ResponseViewerPro
   return (
     <div
       ref={scrollContainerRef}
-      className="h-full overflow-auto"
+      className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden"
       style={{
         userSelect: 'text',
         WebkitUserSelect: 'text',
@@ -403,6 +403,9 @@ export const ResponseViewer = forwardRef<ResponseViewerHandle, ResponseViewerPro
       }}
     >
       <style>{`
+        .response-viewer-content {
+          --response-node-max-height: calc(var(--response-panel-height, 70vh) * 0.7);
+        }
         .response-viewer-content * {
           user-select: text !important;
           -webkit-user-select: text !important;
@@ -446,6 +449,8 @@ export const ResponseViewer = forwardRef<ResponseViewerHandle, ResponseViewerPro
           -webkit-user-select: text !important;
           padding-left: 0 !important;
           padding-right: 0 !important;
+          max-width: 100% !important;
+          overflow-x: hidden !important;
         }
         .response-body-editor .cm-editor,
         .response-body-node .cm-editor {
@@ -454,7 +459,7 @@ export const ResponseViewer = forwardRef<ResponseViewerHandle, ResponseViewerPro
         .response-body-editor .cm-scroller,
         .response-body-node .cm-scroller {
           min-height: 0 !important;
-          max-height: max(24px, calc(var(--response-panel-height, 70vh) - 120px)) !important;
+          max-height: clamp(24px, var(--response-node-max-height), 600px) !important;
           overflow-y: auto !important;
         }
         .response-headers-node .cm-editor,
@@ -473,7 +478,7 @@ export const ResponseViewer = forwardRef<ResponseViewerHandle, ResponseViewerPro
         .request-body-sent-editor .cm-scroller {
           height: auto !important;
           min-height: 180px !important;
-          max-height: max(180px, calc(var(--response-panel-height, 70vh) - 170px)) !important;
+          max-height: clamp(180px, var(--response-node-max-height), 600px) !important;
           overflow-y: auto !important;
         }
       `}</style>

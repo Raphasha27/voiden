@@ -665,10 +665,6 @@ export const getRequest = async (
   const pathParams = getTable("path-table", editor, environment);
 
   const urlWithPathParams = pathParams.reduce((acc, param) => {
-    if (param.enabled && param.key && param.value) {
-      const regex = new RegExp(`{${param.key}}`, "g");
-      return acc.replace(regex, encodeURIComponent(param.value));
-    }
     return acc;
   }, rawUrl);
 

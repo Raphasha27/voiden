@@ -244,15 +244,25 @@ export const CodeEditor = ({
       e.stopPropagation();
     };
 
-    const handleCopyShortcut = (e: KeyboardEvent) => {
-      // Only handle copy shortcut, don't interfere with anything else
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
-        const sel = window.getSelection()?.toString();
-        if (sel) {
-          e.preventDefault();
-          navigator.clipboard.writeText(sel);
-        }
+    const handleCopy = (e: ClipboardEvent) => {
+      const view = editorRef.current;
+      if (!view) return;
+
+      const selectedText = view.state.selection.ranges
+        .filter((range) => !range.empty)
+        .map((range) => view.state.sliceDoc(range.from, range.to))
+        .join("\n");
+
+      if (!selectedText) return;
+
+      if (e.clipboardData) {
+        e.preventDefault();
+        e.clipboardData.setData("text/plain", selectedText);
+        return;
       }
+
+      e.preventDefault();
+      void navigator.clipboard.writeText(selectedText);
     };
 
     // Prevent CodeMirror keyboard shortcuts from bubbling up to the main window
@@ -299,11 +309,11 @@ export const CodeEditor = ({
     };
 
     dom.addEventListener("contextmenu", handleContextMenu, true);
-    dom.addEventListener("keydown", handleCopyShortcut, true);
+    dom.addEventListener("copy", handleCopy, true);
     dom.addEventListener("keydown", handleKeyboardShortcuts, false);
     return () => {
       dom.removeEventListener("contextmenu", handleContextMenu, true);
-      dom.removeEventListener("keydown", handleCopyShortcut, true);
+      dom.removeEventListener("copy", handleCopy, true);
       dom.removeEventListener("keydown", handleKeyboardShortcuts, false);
     };
   }, [editorRef.current]);

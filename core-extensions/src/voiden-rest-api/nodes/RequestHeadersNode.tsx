@@ -139,13 +139,14 @@ const renderTLSSection = (
           const contentHeight = lines * lineHeight + 60;
           const viewportMaxHeight = window.innerHeight * 0.3;
           const maxHeight = Math.min(contentHeight, viewportMaxHeight, 400);
+          const constrainedMaxHeight = 'min(var(--response-node-max-height, 49vh), 400px)';
           const shouldFit = contentHeight <= maxHeight;
 
           return (
             <div
               style={{
-                height: shouldFit ? `${contentHeight}px` : `${maxHeight}px`,
-                maxHeight: `${maxHeight}px`,
+                height: shouldFit ? `${contentHeight}px` : constrainedMaxHeight,
+                maxHeight: constrainedMaxHeight,
                 overflow: "visible", // Changed from "hidden" to allow find panel to show
                 position: "relative",
               }}
@@ -156,7 +157,7 @@ const renderTLSSection = (
                 }
                 .request-summary-editor .cm-scroller {
                   overflow: auto !important;
-                  max-height: ${maxHeight}px !important;
+                  max-height: ${constrainedMaxHeight} !important;
                 }
                 /* Ensure find panel is visible */
                 .request-summary-editor .cm-panels-top {
@@ -372,13 +373,14 @@ export const createRequestHeadersNode = (NodeViewWrapper: any, CodeEditor: any, 
               const contentHeight = headers.length * lineHeight + 60;
               const viewportMaxHeight = window.innerHeight * 0.4;
               const maxHeight = Math.min(contentHeight, viewportMaxHeight, 600);
+              const constrainedMaxHeight = 'min(var(--response-node-max-height, 49vh), 600px)';
               const shouldFit = contentHeight <= maxHeight;
 
               return (
                 <div
                   style={{
-                    height: shouldFit ? `${contentHeight}px` : `${maxHeight}px`,
-                    maxHeight: `${maxHeight}px`,
+                    height: shouldFit ? `${contentHeight}px` : constrainedMaxHeight,
+                    maxHeight: constrainedMaxHeight,
                     overflow: "visible", // Changed from "hidden" to allow find panel to show
                     position: "relative",
                   }}
@@ -389,7 +391,7 @@ export const createRequestHeadersNode = (NodeViewWrapper: any, CodeEditor: any, 
                     }
                     .request-headers-editor .cm-scroller {
                       overflow: auto !important;
-                      max-height: ${maxHeight}px !important;
+                      max-height: ${constrainedMaxHeight} !important;
                     }
                     /* Ensure find panel is visible */
                     .request-headers-editor .cm-panels-top {
@@ -469,6 +471,7 @@ export const createRequestHeadersNode = (NodeViewWrapper: any, CodeEditor: any, 
     const contentHeight = lines * lineHeight + 60;
     const viewportMaxHeight = window.innerHeight * 0.4;
     const maxHeight = Math.min(contentHeight, viewportMaxHeight, 600);
+    const constrainedMaxHeight = 'min(var(--response-node-max-height, 49vh), 600px)';
     const shouldFit = contentHeight <= maxHeight;
 
     return (
@@ -521,8 +524,8 @@ export const createRequestHeadersNode = (NodeViewWrapper: any, CodeEditor: any, 
         {!isCollapsed && (
           <div
             style={{
-              height: shouldFit ? `${contentHeight}px` : `${maxHeight}px`,
-              maxHeight: `${maxHeight}px`,
+              height: shouldFit ? `${contentHeight}px` : constrainedMaxHeight,
+              maxHeight: constrainedMaxHeight,
               overflow: "visible",
               position: "relative",
             }}
@@ -533,7 +536,7 @@ export const createRequestHeadersNode = (NodeViewWrapper: any, CodeEditor: any, 
               }
               .request-body-sent-editor .cm-scroller {
                 overflow: auto !important;
-                max-height: ${maxHeight}px !important;
+                max-height: ${constrainedMaxHeight} !important;
               }
               .request-body-sent-editor .cm-panels-top {
                 position: sticky !important;

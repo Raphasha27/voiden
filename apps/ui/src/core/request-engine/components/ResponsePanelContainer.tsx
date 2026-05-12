@@ -58,7 +58,7 @@ function hasAnyResponse(tabSections: Record<number, any> | undefined): boolean {
 /** Hook to subscribe to stitch store for the active file or tab */
 function useStitchResults(activeTabId: string | undefined) {
   const [hasResults, setHasResults] = useState(false);
-  const [StitchComponent, setStitchComponent] = useState<React.ComponentType<{ tabId?: string }> | null>(null);
+  const [StitchComponent, setStitchComponent] = useState<React.ComponentType<{ tabId?: string; embedded?: boolean }> | null>(null);
 
   useEffect(() => {
     const helpers = (window as any).__voidenHelpers__?.['voiden-stitch'];
@@ -374,8 +374,8 @@ export function ResponsePanelContainer() {
     ((typeof statusInfo.statusCode === "number" && statusInfo.statusCode >= 400) ||
       (isWssOrGrpc && !isSuccess));
 
-  const showContent = !isLoading && !error && !!responseDoc;
-  const showEmpty = !isLoading && !error && !responseDoc;
+  const showContent = !isLoading && !error && (!!responseDoc || hasStitchResults);
+  const showEmpty = !isLoading && !error && !responseDoc && !hasStitchResults;
   const showError = !isLoading && !!error;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -635,7 +635,7 @@ export function ResponsePanelContainer() {
       )}
 
       {/* Content area */}
-      <div className="flex-1 relative overflow-x-hidden">
+      <div className="flex-1 min-h-0 relative overflow-x-hidden">
         {/* Loading indicator */}
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -683,43 +683,8 @@ export function ResponsePanelContainer() {
           </div>
         )}
 
-        {/* Stitch results as collapsible section when there are other responses */}
-        {hasStitchResults && StitchComponent && (
-          <div
-            key="stitch-runner"
-            style={{ borderLeft: "3px solid var(--accent, #7c3aed)" }}
-          >
-            {/* Stitch section header — clickable to collapse/expand */}
-            <div
-              className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg cursor-pointer hover:bg-active transition-colors select-none"
-              onClick={() => toggleSectionCollapse(activeTabId || "", "stitch")}
-            >
-              {collapsedSections.has(`${activeTabId}:stitch`)
-                ? <ChevronRight size={14} className="text-comment flex-shrink-0" />
-                : <ChevronDown size={14} className="text-comment flex-shrink-0" />
-              }
-              <div className="size-2 rounded-full flex-shrink-0 bg-success" />
-              <span className="font-mono text-xs font-bold">
-                Stitch Runner
-              </span>
-              <span
-                className="text-xs font-semibold uppercase flex-shrink-0"
-                style={{ color: "var(--accent, #7c3aed)", letterSpacing: "0.5px" }}
-              >
-                RESULTS
-              </span>
-            </div>
-            {/* Stitch component content — hidden when collapsed */}
-            {!collapsedSections.has(`${activeTabId}:stitch`) && (
-              <div className="ml-2 bg-editor">
-                <StitchComponent tabId={activeTabId} />
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Empty state — when no response or stitch results */}
-        {showEmpty && !hasStitchResults && (
+        {showEmpty && (
           <div className="absolute  ml-2 inset-0 flex items-center justify-center px-4">
             <div className="text-comment text-center">
               Press{" "}
@@ -732,18 +697,20 @@ export function ResponsePanelContainer() {
         {/* Stitch results now appear as response panel sections (no longer overlay) */}
         {/* Stacked response viewers — one per section, scrollable */}
         <div
-          className="overflow-y-auto bg-editor"
+          className="h-full min-h-0 min-w-0 overflow-hidden bg-editor"
           style={{
             visibility: showContent ? "visible" : "hidden",
             pointerEvents: showContent ? "auto" : "none",
           }}
         >
-          {cachedResponseTabIds.map((tabId) => {
+          {Array.from(new Set([
+            ...cachedResponseTabIds,
+            ...(activeTabId && hasStitchResults ? [activeTabId] : []),
+          ])).map((tabId) => {
             const tabIsActive = tabId === activeTabId;
             const tabSectionData = responses[tabId];
-            if (!tabSectionData) return null;
 
-            const sections = Object.entries(tabSectionData)
+            const sections = Object.entries(tabSectionData || {})
               .map(([key, resp]) => ({ sectionIndex: Number(key), response: resp }))
               .filter((s) => s.response?.responseDoc)
               .sort((a, b) => a.sectionIndex - b.sectionIndex);
@@ -751,7 +718,7 @@ export function ResponsePanelContainer() {
             return (
               <div
                 key={tabId}
-                className="h-full"
+                className="h-full min-h-0 min-w-0"
                 style={{ display: tabIsActive ? "block" : "none" }}
               >
                 {sections.length === 1 && !hasStitchResults ? (() => {
@@ -767,10 +734,10 @@ export function ResponsePanelContainer() {
 
                   return (
                     // Single response
-                    <div className="h-full flex flex-col" style={{ borderLeft: `3px solid ${singleBorderColor}` }}>
+                    <div className="h-full min-h-0 min-w-0 flex flex-col" style={{ borderLeft: `3px solid ${singleBorderColor}` }}>
                       {/* Section header with status + search */}
                       <div
-                        className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg flex-shrink-0"
+                        className="flex min-w-0 items-center gap-2 overflow-hidden px-3 py-1.5 border-b border-border bg-bg flex-shrink-0"
                       >
                         <div
                           className="size-2 rounded-full flex-shrink-0"
@@ -834,7 +801,7 @@ export function ResponsePanelContainer() {
                           </button>
                         </Tip>
                       </div>
-                      <div className="flex-1  ml-2 overflow-hidden" >
+                      <div className="flex-1 min-h-0 min-w-0 ml-2 overflow-hidden">
                         <ResponseViewer
                           ref={(handle) => {
                             if (handle) viewerRefs.current.set(`${tabId}:0`, handle);
@@ -854,7 +821,7 @@ export function ResponsePanelContainer() {
                   );
                 })() : (
                   // Multiple responses — sticky toolbar + scrollable sections
-                  <div className="h-full flex flex-col">
+                  <div className="h-full min-h-0 min-w-0 flex flex-col">
                     {/* Sticky toolbar — search then expand/collapse all requests */}
                     {sections.length > 1 && (
                       <div className="flex items-center justify-end gap-1 px-2 py-1 border-b border-border bg-bg flex-shrink-0">
@@ -887,7 +854,39 @@ export function ResponsePanelContainer() {
                         </Tip>
                       </div>
                     )}
-                    <div className="flex-1 overflow-y-auto">
+                    <div className="flex-1 min-h-0 overflow-y-auto">
+                      {tabIsActive && hasStitchResults && StitchComponent && (
+                        <div
+                          key="stitch-runner"
+                          className="min-w-0"
+                          style={{ borderLeft: "3px solid var(--accent, #7c3aed)" }}
+                        >
+                          <div
+                            className="flex min-w-0 items-center gap-2 overflow-hidden px-3 py-1.5 border-b border-border bg-bg cursor-pointer hover:bg-active transition-colors select-none"
+                            onClick={() => toggleSectionCollapse(tabId, "stitch")}
+                          >
+                            {collapsedSections.has(`${tabId}:stitch`)
+                              ? <ChevronRight size={14} className="text-comment flex-shrink-0" />
+                              : <ChevronDown size={14} className="text-comment flex-shrink-0" />
+                            }
+                            <div className="size-2 rounded-full flex-shrink-0 bg-success" />
+                            <span className="font-mono text-xs font-bold">
+                              Stitch Runner
+                            </span>
+                            <span
+                              className="text-xs font-semibold uppercase flex-shrink-0"
+                              style={{ color: "var(--accent, #7c3aed)", letterSpacing: "0.5px" }}
+                            >
+                              RESULTS
+                            </span>
+                          </div>
+                          {!collapsedSections.has(`${tabId}:stitch`) && (
+                            <div className="ml-2 min-w-0 bg-editor">
+                              <StitchComponent tabId={tabId} embedded />
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {sections.map(({ sectionIndex, response }) => {
                         const doc = response.responseDoc;
                         const colorIndex = doc?.attrs?.sectionColorIndex ?? sectionIndex;
@@ -903,11 +902,12 @@ export function ResponsePanelContainer() {
                         return (
                           <div
                             key={sectionIndex}
+                            className="min-w-0"
                             style={{ borderLeft: `3px solid ${borderColor}` }}
                           >
                             {/* Section header — clickable to collapse/expand */}
                             <div
-                              className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-bg cursor-pointer hover:bg-active transition-colors select-none"
+                              className="flex min-w-0 items-center gap-2 overflow-hidden px-3 py-1.5 border-b border-border bg-bg cursor-pointer hover:bg-active transition-colors select-none"
                               onClick={() => toggleSectionCollapse(tabId, sectionIndex)}
                             >
                               {isCollapsed
@@ -983,7 +983,7 @@ export function ResponsePanelContainer() {
                             </div>
                             {/* Response content — hidden when collapsed */}
                             {!isCollapsed && (
-                              <div className="flex-1  ml-2 overflow-hidden" >
+                              <div className="flex-1 min-h-0 min-w-0 ml-2 overflow-hidden">
                                 <ResponseViewer
                                   ref={(handle) => {
                                     if (handle) viewerRefs.current.set(`${tabId}:${sectionIndex}`, handle);

@@ -325,6 +325,7 @@ input[type="week"]::-webkit-datetime-edit-year-field:focus {
 
     /* Base color aliases */
     --ui-bg: var(--bg-primary, #1f2430);
+    --icon-danger: var(--error, #f27983);
     --editor-bg: var(--bg-primary, #1f2430);
     --code-bg: var(--bg-primary, #1f2430);
     --modal-bg: var(--bg-primary, #1f2430);
@@ -628,13 +629,15 @@ input[type="week"]::-webkit-datetime-edit-year-field:focus {
 }
 
 .txt-editor .cm-searchMatch {
-  background-color: var(--highlight-search);
+  background-color: color-mix(in srgb, var(--icon-primary, #ffcc66) 22%, transparent);
+  border-radius: 2px;
 }
 
-.txt-editor .cm-searchMatch-selected {
-  background-color: color-mix(in srgb, var(--icon-primary, #ffcc66) 45%, transparent);
+.txt-editor .cm-active-match {
+  background-color: color-mix(in srgb, var(--icon-primary, #ffcc66) 72%, transparent);
   outline: 2px solid var(--icon-primary, #ffcc66);
   outline-offset: -1px;
+  border-radius: 2px;
 }
 
 .txt-editor .cm-search {

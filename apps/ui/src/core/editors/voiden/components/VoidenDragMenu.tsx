@@ -537,57 +537,38 @@ export const VoidenDragMenu = React.memo(({ editor }: { editor: Editor }) => {
     }
   }, [editor]);
 
+  const resolveTopLevelNodeFromSelection = useCallback(() => {
+    const { state } = editor;
+    const { selection } = state;
+
+    const anchorPos = typeof (selection as any)?.$anchorCell?.pos === "number"
+      ? (selection as any).$anchorCell.pos
+      : selection.from;
+
+    let currentPos = 0;
+    for (let i = 0; i < state.doc.childCount; i++) {
+      const node = state.doc.child(i);
+      const nodeStart = currentPos;
+      const nodeEnd = nodeStart + node.nodeSize;
+      const isLastNode = i === state.doc.childCount - 1;
+
+      if (anchorPos >= nodeStart && (anchorPos < nodeEnd || (isLastNode && anchorPos === nodeEnd))) {
+        return { node, nodePos: nodeStart };
+      }
+
+      currentPos = nodeEnd;
+    }
+
+    return { node: null, nodePos: -1 };
+  }, [editor]);
+
   // Update menu position based on cursor/selection
   useEffect(() => {
     const updateMenuFromSelection = () => {
       if (!editorContainer || menuOpenRef.current) return;
 
       const { view, state } = editor;
-      const { selection } = state;
-      const { $from } = selection;
-
-      // Function to find the target node for toolbar
-      const findTargetNode = () => {
-        // Try regular depth > 0 case first
-        if ($from.depth > 0) {
-          const node = $from.node(1);
-          const nodePos = $from.before(1);
-          return { node, nodePos };
-        }
-
-        // For depth 0 (atom nodes or document root)
-        const pos = $from.pos;
-
-        // Option A: Find node by traversing
-        let currentNode = $from.node(0); // Root
-        let currentPos = 0;
-
-        // Walk through the document to find the node at/before cursor
-        state.doc.descendants((node, nodePos) => {
-          const nodeEnd = nodePos + node.nodeSize;
-
-          // Check if cursor is within or adjacent to this node
-          if (
-            (node.type.name === "codeBlock" || node.type.name === "paragraph") &&
-            (
-              // Cursor is inside node (for non-atom nodes)
-              (pos >= nodePos && pos <= nodeEnd) ||
-              // Cursor is right before node
-              pos === nodePos ||
-              // Cursor is right after node
-              pos === nodeEnd
-            )
-          ) {
-            currentNode = node;
-            currentPos = nodePos;
-            return false; // Stop searching
-          }
-        });
-
-        return { node: currentNode, nodePos: currentPos };
-      };
-
-      const { node, nodePos } = findTargetNode();
+      const { node, nodePos } = resolveTopLevelNodeFromSelection();
 
       // Update if it's a different node
       if (node && nodePos !== -1 && lastMouseNodePos.current !== nodePos) {
@@ -630,7 +611,7 @@ export const VoidenDragMenu = React.memo(({ editor }: { editor: Editor }) => {
         clearTimeout(updateTimeoutRef.current);
       }
     };
-  }, [editor, editorContainer, setCurrentNode, setCurrentNodePos]);
+  }, [editor, editorContainer, resolveTopLevelNodeFromSelection, setCurrentNode, setCurrentNodePos]);
 
   // Track mouse movement over the editor
   useEffect(() => {
@@ -798,10 +779,28 @@ export const VoidenDragMenu = React.memo(({ editor }: { editor: Editor }) => {
 
   const handleOpenMenuHotkey = useCallback(() => {
     if (!isOpen) {
+      const { node, nodePos } = resolveTopLevelNodeFromSelection();
+      if (node && nodePos !== -1) {
+        setCurrentNode(node);
+        setCurrentNodePos(nodePos);
+        lastMouseNodePos.current = nodePos;
+        if (editorContainer) {
+          try {
+            const containerRect = editorContainer.getBoundingClientRect();
+            const coords = editor.view.coordsAtPos(nodePos);
+            setPosition({
+              top: coords.top - containerRect.top,
+              left: -5,
+            });
+          } catch (e) {
+            console.error('Error calculating position:', e);
+          }
+        }
+      }
       setIsOpen(true);
       handleOpenChange(true);
     }
-  }, [isOpen, handleOpenChange]);
+  }, [editor, editorContainer, isOpen, handleOpenChange, resolveTopLevelNodeFromSelection, setCurrentNode, setCurrentNodePos]);
 
   // Keyboard navigation for menu items
   const handleMenuKeyDown = useCallback((e: React.KeyboardEvent) => {

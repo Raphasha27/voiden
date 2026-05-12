@@ -160,14 +160,15 @@ export const createResponseHeadersNode = (
             const contentHeight = headers.length * lineHeight + 60;
             const viewportMaxHeight = window.innerHeight * 0.4;
             const maxHeight = Math.min(contentHeight, viewportMaxHeight, 600);
+            const constrainedMaxHeight = 'min(var(--response-node-max-height, 49vh), 600px)';
 
             // If content fits, use exact height; otherwise use maxHeight
             const shouldFit = contentHeight <= maxHeight;
 
             return (
               <div style={{
-                height: shouldFit ? `${contentHeight}px` : `${maxHeight}px`,
-                maxHeight: `${maxHeight}px`,
+                height: shouldFit ? `${contentHeight}px` : constrainedMaxHeight,
+                maxHeight: constrainedMaxHeight,
                 overflow: 'hidden',
                 position: 'relative'
               }}>
@@ -177,7 +178,7 @@ export const createResponseHeadersNode = (
                     max-height: none !important;
                   }
                   .response-headers-editor .cm-scroller {
-                    max-height: none !important;
+                    max-height: ${constrainedMaxHeight} !important;
                     overflow-y: auto !important;
                   }
                   .response-headers-editor .cm-panels-top {

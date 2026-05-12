@@ -342,6 +342,7 @@ const VoidenEditorInner = ({
   const setUnifiedSearchActive = useSearchStore((s) => s.setUnifiedSearchActive);
   const [matchPositions, setMatchPositions] = useState<UnifiedMatch[]>([]);
   const [currentMatch, setCurrentMatch] = useState(-1);
+  const storeTargetMatchIndex = useSearchStore((s) => s.targetMatchIndex);
 
   // Auto-enable multiline when a literal newline is pasted/entered.
   useEffect(() => {
@@ -1233,13 +1234,14 @@ const VoidenEditorInner = ({
 
   // Unified effect to recalc as needed
   useEffect(() => {
+    if (!showFind) return;
     recalcFindMatches();
-  }, [editor, findTerm, matchCase, matchWholeWord, useRegex]);
+  }, [editor, findTerm, matchCase, matchWholeWord, useRegex, showFind]);
 
   // Reapply highlights on document edits while search is active (without resetting selection)
   // Debounced to avoid dispatching a new transaction on every keystroke
   useEffect(() => {
-    if (!editor || !findTerm) return;
+    if (!editor || !findTerm || !showFind) return;
     let searchDebounceTimer: number | null = null;
     const onUpdate = () => {
       if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
@@ -1260,7 +1262,7 @@ const VoidenEditorInner = ({
       editor.off("update", onUpdate);
       if (searchDebounceTimer !== null) clearTimeout(searchDebounceTimer);
     };
-  }, [editor, findTerm, matchCase, matchWholeWord, useRegex, currentMatch]);
+  }, [editor, findTerm, matchCase, matchWholeWord, useRegex, currentMatch, showFind]);
 
   // Navigate to a specific match (PM or CM).
   // scroll=true: physically scroll + select (explicit next/prev/replace).
@@ -1377,6 +1379,17 @@ const VoidenEditorInner = ({
     if (!showFind || !editor || matchPositions.length === 0) return;
     navigateToMatch(0, false, false);
   }, [showFind, editor]);
+
+  // When a global search result is clicked, jump to the exact match.
+  // Defined last so it fires after the default match-0 effects and wins.
+  // Fires on both storeTargetMatchIndex change (click) and matchPositions change
+  // (matches computed after panel opens) to handle the race either way.
+  useEffect(() => {
+    if (!isActive || storeTargetMatchIndex === null || matchPositions.length === 0 || !editor) return;
+    const idx = Math.min(storeTargetMatchIndex, matchPositions.length - 1);
+    useSearchStore.getState().setTargetMatchIndex(null);
+    navigateToMatch(idx, false, true);
+  }, [storeTargetMatchIndex, matchPositions, isActive, editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFindPrevious = () => {
     if (matchPositions.length === 0 || !editor) return;

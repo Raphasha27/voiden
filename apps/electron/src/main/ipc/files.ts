@@ -686,6 +686,78 @@ export function registerFileIpcHandlers() {
     }
   });
 
+  ipcMain.handle("files:expandDirAll", async (_event, dirPath: string) => {
+    const t0 = Date.now();
+    try {
+      const activeProject = await getActiveProject();
+      const GIT_EXPAND_TIMEOUT_MS = 200;
+      const gitStatusMap = activeProject
+        ? await Promise.race([
+            getCachedGitStatus(activeProject),
+            new Promise<Map<string, any>>((resolve) =>
+              setTimeout(() => resolve(new Map()), GIT_EXPAND_TIMEOUT_MS)
+            ),
+          ])
+        : new Map();
+
+      const result: Record<string, any[]> = {};
+
+      const readDir = async (currentPath: string) => {
+        const items = await fs.promises.readdir(currentPath, { withFileTypes: true });
+        const filtered = items.filter((item) => {
+          if (!item.name.startsWith(".")) return true;
+          if (
+            item.isFile() &&
+            (item.name === ".gitignore" ||
+              item.name === ".env" ||
+              item.name.startsWith(".env") ||
+              item.name.endsWith(".env"))
+          ) return true;
+          return false;
+        });
+
+        const children = filtered.map((item) => {
+          const fullPath = path.join(currentPath, item.name);
+          if (item.isDirectory()) {
+            return { name: item.name, path: fullPath, type: "folder" as const, children: [], lazy: true };
+          }
+          return {
+            name: item.name,
+            path: fullPath,
+            type: "file" as const,
+            ...(gitStatusMap?.has(fullPath) ? { git: gitStatusMap.get(fullPath) } : {}),
+          };
+        });
+
+        children.sort((a, b) => {
+          if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+          return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+        });
+
+        result[currentPath] = children;
+
+        await Promise.all(
+          children
+            .filter((c) => c.type === "folder")
+            .map((c) => readDir(c.path))
+        );
+      };
+
+      await readDir(dirPath);
+
+      const ms = Date.now() - t0;
+      if (ms > 500) {
+        logger.warn("filesystem", `files:expandDirAll SLOW (${ms}ms)`, { dirPath, ms });
+      } else {
+        logger.debug("filesystem", "files:expandDirAll", { dirPath, ms });
+      }
+
+      return result;
+    } catch {
+      return {};
+    }
+  });
+
   // Flat file list for the '@' file-link feature and the command palette.
   // Uses `rg --files` for near-instant listing; falls back to BFS if rg is unavailable.
   //

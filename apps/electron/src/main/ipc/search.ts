@@ -156,7 +156,7 @@ export function registerSearchIpcHandler() {
   const ARCHIVE_EXT = ["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tgz", "tbz2", "txz"];
   const BINARY_EXT = ["exe", "msi", "dll", "bin", "iso", "img", "dmg", "so"];
   const SKIP_EXT = [...IMAGE_EXT, ...ARCHIVE_EXT, ...BINARY_EXT, "pdf"];
-  const SKIP_DIR = [".git", ".idea", ".vscode"]
+  const SKIP_DIR = [".git", ".idea", ".vscode", ".voiden"]
   const SKIP_FILES = [".DS_Store"]
 
   function makeSnippet(line: string, matchStartCol: number, matchLen: number, maxLen = 160) {
@@ -195,7 +195,7 @@ export function registerSearchIpcHandler() {
     const state: { proc?: ReturnType<typeof spawn>; cancelled: boolean } = { cancelled: false };
     activeSearches.set(key, state);
 
-    const send = (result: { path: string; line: number; preview: string }) => {
+    const send = (result: { path: string; line: number; col: number; preview: string }) => {
       if (state.cancelled || event.sender.isDestroyed()) return;
       event.sender.send("search-files:result", { searchId, result });
     };
@@ -270,7 +270,7 @@ export function registerSearchIpcHandler() {
 
             const absolutePath = file.startsWith(path.sep) ? file : path.join(projectRoot!, file);
             const preview = makeSnippet(fullLine, Math.max(0, col - 1), query.length);
-            send({ path: absolutePath, line: ln, preview });
+            send({ path: absolutePath, line: ln, col, preview });
             count++;
 
             if (count >= MAX_SEARCH_RESULTS) {
@@ -304,7 +304,7 @@ export function registerSearchIpcHandler() {
       const pattern = matchWholeWord ? `\\b(?:${rawPattern})\\b` : rawPattern;
       let regex: RegExp;
       try {
-        regex = new RegExp(pattern, matchCase ? "" : "i");
+        regex = new RegExp(pattern, matchCase ? "g" : "gi");
       } catch (err) {
         done(`Invalid regular expression: ${err instanceof Error ? err.message : String(err)}`);
         return;
@@ -341,8 +341,11 @@ export function registerSearchIpcHandler() {
           } catch {
             continue;
           }
-          const match = regex.exec(content);
-          if (match && match.index !== undefined) {
+          // Find ALL matches in the file (global regex).
+          regex.lastIndex = 0;
+          let match: RegExpExecArray | null;
+          while ((match = regex.exec(content)) !== null) {
+            if (state.cancelled || count >= MAX_SEARCH_RESULTS) break;
             const matchIndex = match.index;
             const lineStart = content.lastIndexOf("\n", matchIndex - 1) + 1;
             const rawLineEnd = content.indexOf("\n", matchIndex);
@@ -350,8 +353,10 @@ export function registerSearchIpcHandler() {
             const lineText = content.slice(lineStart, lineEnd);
             const lineNum = content.slice(0, matchIndex).split("\n").length;
             const preview = makeSnippet(lineText, matchIndex - lineStart, match[0].length);
-            send({ path: fullPath, line: lineNum, preview });
+            send({ path: fullPath, line: lineNum, col: (matchIndex - lineStart) + 1, preview });
             count++;
+            // Prevent infinite loop on zero-length matches.
+            if (match[0].length === 0) regex.lastIndex++;
           }
         } finally {
           sem.release();

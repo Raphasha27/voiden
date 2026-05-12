@@ -801,13 +801,14 @@ export function registerRequestIpcHandler() {
       if (requestState.pathParams && requestState.pathParams.length > 0) {
         for (const param of requestState.pathParams) {
           if (param.enabled !== false) {
+            let key = param.key;
             let value = param.value;
 
             if (activeProject) {
+              key = await replaceVariablesSecure(key, activeProject);
               value = await replaceVariablesSecure(value, activeProject);
             }
-
-            url = url.replace(`{${param.key}}`, encodeURIComponent(value));
+            url = url.replace(`{${key}}`, encodeURIComponent(value));
           }
         }
       }

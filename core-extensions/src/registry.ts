@@ -378,6 +378,7 @@ export const coreExtensions: ExtensionMetadata[] = [
     "author": "Voiden Team",
     "enabled": true,
     "priority": 25,
+    "mainProcess": true,
     "readme": "Add JavaScript pre-request and post-response scripts to your API requests. Use the vd API to read/write request data, work with environment/runtime variables, and control request flow. Insert with /pre-script and /post-script slash commands. Note: for request body, pass a string payload; if you pass an object/JSON value it should be stringified.",
     "capabilities": {
       "blocks": {

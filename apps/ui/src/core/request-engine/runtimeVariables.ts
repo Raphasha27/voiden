@@ -296,19 +296,6 @@ export async function saveRuntimeVariables(
     path: string,
 ): Promise<void> {
     try {
-        // Ask main process for the authoritative active env key
-        const envKey: string = await window.electron?.variables.getActiveEnvKey() ?? "__global__";
-
-        // Read existing vars for that specific bucket only
-        let existingVariables: Record<string, any> = {};
-        try {
-            existingVariables = await window.electron?.variables.read(envKey) ?? {};
-        } catch (error: any) {
-            if (error.code !== "ENOENT") {
-                console.warn("Error reading variables file, starting fresh:", error);
-            }
-        }
-
         // Process capture array and extract values
         const newVariables: Record<string, any> = {};
 
@@ -331,9 +318,9 @@ export async function saveRuntimeVariables(
             }
         }
 
-        // Write only new vars merged into the existing bucket — same envKey for both
-        const mergedVariables = { ...existingVariables, ...newVariables };
-        await window.electron?.variables.writeVariables(mergedVariables, envKey);
+        // Get the active environment key first, then merge into the correct bucket
+        const activeEnvKey = await window.electron?.variables.getActiveEnvKey();
+        await window.electron?.variables.mergeVariables(newVariables, activeEnvKey);
         await window.electron?.git?.updateGitignore(['.voiden', '.voiden/.process.env.json'], path);
     } catch (error: any) {
         console.error("Error saving runtime variables:", error);

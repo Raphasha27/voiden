@@ -37,6 +37,7 @@ export interface DocumentState {
 export interface SearchResult {
   path: string;
   line: number;
+  col: number;
   preview: string;
 }
 
@@ -383,6 +384,7 @@ declare global {
           publicTree: Record<string, unknown>,
           privateTree: Record<string, unknown>,
           profile?: string,
+          projectPath?: string,
         ) => Promise<void>;
         getProfiles: () => Promise<string[]>;
         setActiveProfile: (profile: string) => Promise<void>;

@@ -550,7 +550,7 @@ export const createResponseBodyNode = (
             }
             .response-body-editor .cm-scroller {
               min-height: 0 !important;
-              max-height: min(600px, calc(var(--response-panel-height, 70vh) - 120px)) !important;
+              max-height: clamp(24px, var(--response-node-max-height, 49vh), 600px) !important;
               overflow-y: auto !important;
             }
             .response-body-editor .cm-panels-top {

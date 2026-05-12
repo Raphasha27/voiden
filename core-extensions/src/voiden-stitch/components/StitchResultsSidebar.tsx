@@ -616,11 +616,13 @@ const RunResultsView = ({
   isDone,
   isRunning,
   onOpenFile,
+  sharedScroll = false,
 }: {
   run: Pick<StitchRunState, 'files' | 'summary' | 'status' | 'startedAt' | 'duration' | 'currentFileIndex'>;
   isDone: boolean;
   isRunning: boolean;
   onOpenFile: (path: string) => void;
+  sharedScroll?: boolean;
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [allExpanded, setAllExpanded] = useState(false);
@@ -628,8 +630,9 @@ const RunResultsView = ({
   const [showFilter, setShowFilter] = useState(false);
 
   useEffect(() => {
+    if (sharedScroll) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [run.currentFileIndex]);
+  }, [run.currentFileIndex, sharedScroll]);
 
   const filteredFiles = useMemo(() => {
     if (!filterText.trim()) return run.files;
@@ -752,7 +755,7 @@ const RunResultsView = ({
       )}
 
       {/* File list */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-editor">
+      <div className={`${sharedScroll ? 'overflow-visible' : 'flex-1 overflow-y-auto'} overflow-x-hidden min-h-0 bg-editor`}>
         {run.files.length === 0 && (
           <div className="p-4 text-comment text-center text-[11px]">No files in this run.</div>
         )}
@@ -765,7 +768,7 @@ const RunResultsView = ({
   );
 };
 
-export const StitchResultsSidebar = ({ tabId }: { tabId?: string }) => {
+export const StitchResultsSidebar = ({ tabId, embedded = false }: { tabId?: string; embedded?: boolean }) => {
   const run = useStitchRun(tabId);
 
   // History state
@@ -835,7 +838,7 @@ export const StitchResultsSidebar = ({ tabId }: { tabId?: string }) => {
   // ── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full font-mono overflow-x-hidden">
+    <div className={`flex flex-col font-mono overflow-x-hidden min-w-0 ${embedded ? 'h-auto' : 'h-full'}`}>
       {/* Top bar */}
       <div className="flex items-center justify-between h-10 border-b border-border px-3 flex-shrink-0 bg-bg">
         <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -924,7 +927,7 @@ export const StitchResultsSidebar = ({ tabId }: { tabId?: string }) => {
               </button>
             </div>
           )}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-editor">
+          <div className={`${embedded ? 'overflow-visible' : 'flex-1 overflow-y-auto'} overflow-x-hidden min-h-0 bg-editor`}>
             {historyLoading && (
               <div className="p-4 flex items-center justify-center gap-2 text-comment text-[11px]">
                 <Loader2 size={12} className="animate-spin" />
@@ -972,6 +975,7 @@ export const StitchResultsSidebar = ({ tabId }: { tabId?: string }) => {
             isDone={true}
             isRunning={false}
             onOpenFile={handleOpenFile}
+            sharedScroll={embedded}
           />
         </>
       )}
@@ -980,7 +984,7 @@ export const StitchResultsSidebar = ({ tabId }: { tabId?: string }) => {
       {!showHistory && (
         <>
           {isIdle ? (
-            <div className="flex-1 flex items-center justify-center p-4 text-comment text-center text-[11px] bg-editor">
+            <div className={`${embedded ? '' : 'flex-1 flex items-center justify-center'} p-4 text-comment text-center text-[11px] bg-editor`}>
               Insert a <code className="text-text mx-1">/stitch</code> block and click Run to see results here.
             </div>
           ) : (
@@ -989,6 +993,7 @@ export const StitchResultsSidebar = ({ tabId }: { tabId?: string }) => {
               isDone={isDone}
               isRunning={isRunning}
               onOpenFile={handleOpenFile}
+              sharedScroll={embedded}
             />
           )}
         </>

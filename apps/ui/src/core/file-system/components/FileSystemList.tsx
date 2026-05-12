@@ -995,55 +995,57 @@ export const FileSystemList = () => {
     setIsTreeBusy(true);
     const frame = () => new Promise<void>((resolve) => requestAnimationFrame(resolve));
 
-    // Phase 1 — one IPC call gets the entire subtree at once.
-    // Previously this was N calls (one per directory), causing N round-trips
-    // and N separate IPC-triggered refreshes. Now it's a single round-trip.
-    const allChildren = await ipcExpandDirAll(startPath);
+    try {
+      // Phase 1 — one IPC call gets the entire subtree at once.
+      // Previously this was N calls (one per directory), causing N round-trips
+      // and N separate IPC-triggered refreshes. Now it's a single round-trip.
+      const allChildren = await ipcExpandDirAll(startPath);
 
-    if (!allChildren || Object.keys(allChildren).length === 0) {
-      setIsTreeBusy(false);
-      return;
-    }
-
-    // Rebuild BFS level order from the returned flat map so we can inject
-    // and open parents before children (injectChildren requires parent first).
-    const leveledPaths: string[][] = [];
-    let currentLevel = [startPath];
-    while (currentLevel.length > 0) {
-      leveledPaths.push([...currentLevel]);
-      const nextLevel: string[] = [];
-      for (const dirPath of currentLevel) {
-        for (const child of allChildren[dirPath] ?? []) {
-          if (child.type === "folder") nextLevel.push(child.path);
-        }
+      if (!allChildren || Object.keys(allChildren).length === 0) {
+        setIsTreeBusy(false);
+        return;
       }
-      currentLevel = nextLevel;
-    }
 
-    // Phase 2 — inject all data in one setTreeData call (one React render).
-    setTreeData((prev) => {
-      let updated = prev;
+      // Rebuild BFS level order from the returned flat map so we can inject
+      // and open parents before children (injectChildren requires parent first).
+      const leveledPaths: string[][] = [];
+      let currentLevel = [startPath];
+      while (currentLevel.length > 0) {
+        leveledPaths.push([...currentLevel]);
+        const nextLevel: string[] = [];
+        for (const dirPath of currentLevel) {
+          for (const child of allChildren[dirPath] ?? []) {
+            if (child.type === "folder") nextLevel.push(child.path);
+          }
+        }
+        currentLevel = nextLevel;
+      }
+
+      // Phase 2 — inject all data in one setTreeData call (one React render).
+      setTreeData((prev) => {
+        let updated = prev;
+        for (const levelPaths of leveledPaths) {
+          for (const dirPath of levelPaths) {
+            const children = allChildren[dirPath];
+            if (children) updated = injectChildren(updated, dirPath, children);
+          }
+        }
+        return updated;
+      });
+      await frame();
+
+      // Phase 3 — open level by level. react-arborist.get() is visibility-limited
+      // so we must open parents before children can be found.
       for (const levelPaths of leveledPaths) {
         for (const dirPath of levelPaths) {
-          const children = allChildren[dirPath];
-          if (children) updated = injectChildren(updated, dirPath, children);
+          expandedDirsRef.current.add(dirPath);
+          treeRef.current?.get(dirPath)?.open();
         }
+        await frame();
       }
-      return updated;
-    });
-    await frame();
-
-    // Phase 3 — open level by level. react-arborist.get() is visibility-limited
-    // so we must open parents before children can be found.
-    for (const levelPaths of leveledPaths) {
-      for (const dirPath of levelPaths) {
-        expandedDirsRef.current.add(dirPath);
-        treeRef.current?.get(dirPath)?.open();
-      }
-      await frame();
+    } finally {
+      setIsTreeBusy(false);
     }
-
-    setIsTreeBusy(false);
   }, []);
 
   const collapseAllFromFolder = useCallback(async (folderNode: NodeApi<ExtendedFileTree>) => {
@@ -1221,7 +1223,7 @@ export const FileSystemList = () => {
     let firstResult = true;
     const unsubResult = window.electron?.onSearchResult?.((data) => {
       if (data.searchId !== currentId) return;
-      const key = `${data.result.path}:${data.result.line}`;
+      const key = `${data.result.path}:${data.result.line}:${data.result.col}`;
       if (!seenSearchResultsRef.current.has(key)) {
         seenSearchResultsRef.current.add(key);
         if (firstResult) {
@@ -1850,172 +1852,194 @@ export const FileSystemList = () => {
           />
         )}
       </div>
-      {storeIsSearching && (
-        <div className="p-2">
-          <SearchPanelView
-            findValue={rawQuery}
-            replaceValue=""
-            matchCase={matchCase}
-            matchWholeWord={matchWholeWord}
-            useRegex={useRegex}
-            multiline={useMultiline}
-            showReplace={false}
-            hideNav
-            findInputRef={findInputRef}
-            onFindChange={setRawQuery}
-            onReplaceChange={() => {}}
-            onToggleMatchCase={() => setMatchCase((c) => !c)}
-            onToggleMatchWholeWord={() => setMatchWholeWord((w) => !w)}
-            onToggleRegex={() => setUseRegex((r) => !r)}
-            onToggleMultiline={() => setUseMultiline((m) => !m)}
-            onClose={() => { setStoreIsSearching(false); setRawQuery(""); }}
-          />
-        </div>
-      )}
-      {storeIsSearching ? (
-        <div className="flex flex-col flex-1 overflow-y-auto p-2">
-          {searchError && <div className="text-red-500 text-sm">Error running search: {searchError}</div>}
-          {!searchError && searchQuery && (() => {
-            const matchCount = searchResults.length;
-            const fileCount = new Set(searchResults.map((r) => r.path)).size;
-            return (
-              <div className="flex items-center gap-2 text-xs text-gray-400 px-2 mb-1">
-                {!isSearching && matchCount === 0 && rawQuery === searchQuery && <span>No results for "{rawQuery}"</span>}
-                {matchCount > 0 && <span>{matchCount} match{matchCount === 1 ? "" : "es"} in {fileCount} file{fileCount === 1 ? "" : "s"}</span>}
-                {isSearching && <Loader size={12} className="animate-spin text-accent shrink-0" />}
-              </div>
-            );
-          })()}
-          {searchResults.length > 0 && (() => {
-            // rg reports one result per matched line; for multi-line queries
-            // the preview is still a single line, so highlight using the
-            // first non-empty line of the pattern.
-            const firstLine = searchQuery.split(/\r?\n/).find((l) => l.length > 0) ?? "";
-            const rawPattern = useRegex
-              ? firstLine
-              : firstLine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const wrapped = matchWholeWord ? `\\b(?:${rawPattern})\\b` : rawPattern;
-            let splitter: RegExp | null = null;
-            try {
-              splitter = rawPattern ? new RegExp(`(${wrapped})`, matchCase ? "" : "i") : null;
-            } catch {
-              splitter = null;
-            }
-            return (
-              <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                {searchResults.map(({ path, line, preview }) => (
+      {/* Search Panel — always rendered, visibility controlled by CSS */}
+      <div className={cn("p-2", !storeIsSearching && "hidden")}>
+        <SearchPanelView
+          findValue={rawQuery}
+          replaceValue=""
+          matchCase={matchCase}
+          matchWholeWord={matchWholeWord}
+          useRegex={useRegex}
+          multiline={useMultiline}
+          showReplace={false}
+          hideNav
+          findInputRef={findInputRef}
+          onFindChange={setRawQuery}
+          onReplaceChange={() => {}}
+          onToggleMatchCase={() => setMatchCase((c) => !c)}
+          onToggleMatchWholeWord={() => setMatchWholeWord((w) => !w)}
+          onToggleRegex={() => setUseRegex((r) => !r)}
+          onToggleMultiline={() => setUseMultiline((m) => !m)}
+          onClose={() => { setStoreIsSearching(false); setRawQuery(""); }}
+        />
+      </div>
+
+      {/* Search Results — always rendered, visibility controlled by CSS */}
+      <div
+        className={cn("flex flex-col flex-1 overflow-y-auto p-2", !storeIsSearching && "hidden")}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      >
+        {searchError && <div className="text-red-500 text-sm">Error running search: {searchError}</div>}
+        {!searchError && searchQuery && (() => {
+          const matchCount = searchResults.length;
+          const fileCount = new Set(searchResults.map((r) => r.path)).size;
+          return (
+            <div className="flex items-center gap-2 text-xs text-gray-400 px-2 mb-1">
+              {!isSearching && matchCount === 0 && rawQuery === searchQuery && <span>No results for "{rawQuery}"</span>}
+              {matchCount > 0 && <span>{matchCount} match{matchCount === 1 ? "" : "es"} in {fileCount} file{fileCount === 1 ? "" : "s"}</span>}
+              {isSearching && <Loader size={12} className="animate-spin text-accent shrink-0" />}
+            </div>
+          );
+        })()}
+        {searchResults.length > 0 && (() => {
+          const firstLine = searchQuery.split(/\r?\n/).find((l) => l.length > 0) ?? "";
+          const rawPattern = useRegex
+            ? firstLine
+            : firstLine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const wrapped = matchWholeWord ? `\\b(?:${rawPattern})\\b` : rawPattern;
+          let splitter: RegExp | null = null;
+          try {
+            splitter = rawPattern ? new RegExp(`(${wrapped})`, matchCase ? "" : "i") : null;
+          } catch { splitter = null; }
+
+          const openMatch = async (path: string, line: number, col: number, matchIndex: number) => {
+            const editorSearch = useEditorSearchStore.getState();
+            // Set search params before opening the tab so CM knows what to highlight.
+            editorSearch.setTerm(searchQuery);
+            editorSearch.setMatchCase(matchCase);
+            editorSearch.setMatchWholeWord(matchWholeWord);
+            editorSearch.setUseRegex(useRegex);
+            editorSearch.setUseMultiline(useMultiline);
+            const newTab = {
+              id: crypto.randomUUID(),
+              type: "document" as const,
+              title: path.split("/").pop() || path,
+              source: path,
+              directory: null,
+            };
+            const response = await window.electron?.state.addPanelTab("main", newTab);
+            const tabId = response?.tabId;
+            if (tabId) await activateTab({ panelId: "main", tabId });
+            // Set all target info AFTER activateTab in the same React batch as
+            // requestOpenSearchPanel so navigation effects fire last and win.
+            editorSearch.setTargetLine(line);
+            editorSearch.setTargetCol(col);
+            editorSearch.setTargetPath(path);
+            editorSearch.setTargetMatchIndex(matchIndex);
+            editorSearch.requestOpenSearchPanel();
+          };
+
+          // Group all matches by file path.
+          const byFile = searchResults.reduce<Record<string, typeof searchResults>>((acc, r) => {
+            (acc[r.path] ??= []).push(r);
+            return acc;
+          }, {});
+
+          return (
+            <div className="space-y-1">
+              {Object.entries(byFile).map(([filePath, matches]) => (
+                <div key={filePath} className="rounded-lg border border-border overflow-hidden">
+                  {/* File header — clicking opens to the first match in the file */}
                   <div
-                    key={`${path}:${line}`}
-                    className="p-3 bg-active rounded-lg border border-gray-200 hover:bg-transparent transition cursor-pointer"
-                    onClick={async () => {
-                      const editorSearch = useEditorSearchStore.getState();
-                      editorSearch.setTerm(searchQuery);
-                      editorSearch.setMatchCase(matchCase);
-                      editorSearch.setMatchWholeWord(matchWholeWord);
-                      editorSearch.setUseRegex(useRegex);
-                      editorSearch.setUseMultiline(useMultiline);
-                      const newTab = {
-                        id: crypto.randomUUID(),
-                        type: "document" as const,
-                        title: path.split("/").pop() || path,
-                        source: path,
-                        directory: null,
-                      };
-                      const response = await window.electron.state.addPanelTab("main", newTab);
-                      const tabId = response?.tabId;
-                      if (tabId) {
-                        await activateTab({ panelId: "main", tabId });
-                      }
-                      editorSearch.requestOpenSearchPanel();
-                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-active cursor-pointer hover:bg-hover transition-colors"
+                    onClick={() => openMatch(filePath, matches[0].line, matches[0].col, 0)}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs text-gray-300 truncate">{path.split("/").pop() || path}</span>
-                      <span className="text-xs text-gray-300">Line {line}</span>
-                    </div>
-                    <p className="mt-1 text-sm text-white break-words">
-                      {splitter
-                        ? preview.split(splitter).map((part, idx) => (
-                            <React.Fragment key={idx}>
-                              {idx % 2 === 1 ? <mark className="bg-accent text-black rounded">{part}</mark> : part}
-                            </React.Fragment>
-                          ))
-                        : preview}
-                    </p>
+                    <span className="text-xs font-medium text-text truncate flex-1">{filePath.split("/").pop() || filePath}</span>
+                    <span className="text-xs text-comment shrink-0">{matches.length} match{matches.length !== 1 ? "es" : ""}</span>
                   </div>
-                ))}
-              </div>
-            );
-          })()}
-        </div>
-      ) : (
-        <div ref={ref} className="flex-1 overflow-hidden">
-          <TreeActionsContext.Provider value={{ expandAllRecursive, collapseAllFromFolder }}>
-            <DragOverContext.Provider value={{ dragOverParentId, setDragOverParentId }}>
-              <div
-                ref={dndRootElement}
-                onKeyDown={async (e) => {
-                  if (e.key !== "Enter") return;
-                  const focused = treeRef.current?.focusedNode ?? treeRef.current?.selectedNodes?.[0];
-                  if (!focused || focused.data.isTemporary) return;
-                  e.preventDefault();
-                  await handleActivate(focused);
-                }}
-              >
-                {treeData && (
-                  <Tree
-                    dndRootElement={dndRootElement.current}
-                    ref={treeRef}
-                    data={treeData}
-                    width={width}
-                    height={height}
-                    rowHeight={24}
-                    indent={12}
-                    idAccessor="path"
-                    initialOpenState={getInitialOpenState(data as ExtendedFileTree)}
-                    openByDefault={false}
-                    onMove={handleMove}
-                    disableDrag={() => false}
-                    onCreate={handleCreate}
-                    disableDrop={({ parentNode, dragNodes }) => {
-                      if (!parentNode) return true;
-                      return dragNodes.some((node) => node.data.parent === parentNode.data.path);
-                    }}
-                  >
-                    {(nodeProps) => (
-                      <TreeNode
-                        {...nodeProps}
-                        activeFile={activeFile}
-                        removeTemporaryNode={handleRemoveTemporaryNode}
-                        onFolderToggle={expandLazyNode}
-                        refreshDir={refreshDir}
-                        expandedDirsRef={expandedDirsRef}
-                        treeRef={treeRef}
-                      />
-                    )}
-                  </Tree>
-                )}
-              </div>
-            </DragOverContext.Provider>
-          </TreeActionsContext.Provider>
-          {/* Empty space at bottom to ensure context menu is always accessible */}
-          <div
-            className="min-h-[200px]"
-            onContextMenu={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              if (data) {
-                window.electron?.files.showFileContextMenu({
-                  path: data.path,
-                  type: data.type,
-                  name: data.name,
-                  isProjectRoot: true,
-                });
-              }
-            }}
-          />
-        </div>
-      )}
+                  {/* All individual line matches */}
+                  {matches.map(({ line, col, preview }, matchIndex) => (
+                    <div
+                      key={`${line}:${col}`}
+                      className="flex items-start gap-3 px-3 py-1.5 border-t border-border cursor-pointer hover:bg-hover transition-colors"
+                      onClick={() => openMatch(filePath, line, col, matchIndex)}
+                    >
+                      <span className="text-xs text-comment shrink-0 tabular-nums w-5 text-right">{line}</span>
+                      <p className="text-xs text-text break-all leading-5">
+                        {splitter
+                          ? preview.trim().split(splitter).map((part, idx) => (
+                              <React.Fragment key={idx}>
+                                {idx % 2 === 1 ? <mark className="bg-accent/60 text-text rounded px-0.5">{part}</mark> : part}
+                              </React.Fragment>
+                            ))
+                          : preview.trim()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* File System Tree — always rendered, visibility controlled by CSS */}
+      <div ref={ref} className={cn("flex-1 overflow-hidden", storeIsSearching && "hidden")}>
+        <TreeActionsContext.Provider value={{ expandAllRecursive, collapseAllFromFolder }}>
+          <DragOverContext.Provider value={{ dragOverParentId, setDragOverParentId }}>
+            <div
+              ref={dndRootElement}
+              onKeyDown={async (e) => {
+                if (e.key !== "Enter") return;
+                const focused = treeRef.current?.focusedNode ?? treeRef.current?.selectedNodes?.[0];
+                if (!focused || focused.data.isTemporary) return;
+                e.preventDefault();
+                await handleActivate(focused);
+              }}
+            >
+              {treeData && (
+                <Tree
+                  dndRootElement={dndRootElement.current}
+                  ref={treeRef}
+                  data={treeData}
+                  width={width}
+                  height={height}
+                  rowHeight={24}
+                  indent={12}
+                  idAccessor="path"
+                  initialOpenState={getInitialOpenState(data as ExtendedFileTree)}
+                  openByDefault={false}
+                  onMove={handleMove}
+                  disableDrag={() => false}
+                  onCreate={handleCreate}
+                  disableDrop={({ parentNode, dragNodes }) => {
+                    if (!parentNode) return true;
+                    return dragNodes.some((node) => node.data.parent === parentNode.data.path);
+                  }}
+                >
+                  {(nodeProps) => (
+                    <TreeNode
+                      {...nodeProps}
+                      activeFile={activeFile}
+                      removeTemporaryNode={handleRemoveTemporaryNode}
+                      onFolderToggle={expandLazyNode}
+                      refreshDir={refreshDir}
+                      expandedDirsRef={expandedDirsRef}
+                      treeRef={treeRef}
+                    />
+                  )}
+                </Tree>
+              )}
+            </div>
+          </DragOverContext.Provider>
+        </TreeActionsContext.Provider>
+        {/* Empty space at bottom to ensure context menu is always accessible */}
+        <div
+          className="min-h-[200px]"
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (data) {
+              window.electron?.files.showFileContextMenu({
+                path: data.path,
+                type: data.type,
+                name: data.name,
+                isProjectRoot: true,
+              });
+            }
+          }}
+        />
+      </div>
     </div>
   );
 };

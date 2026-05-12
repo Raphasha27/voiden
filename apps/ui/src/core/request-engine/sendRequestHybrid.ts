@@ -361,6 +361,10 @@ export async function sendRequestHybrid(
       throw new Error(reason ? `Request cancelled by pre-request script: ${reason}` : "Request cancelled by pre-request script");
     }
 
+    if (requestState?.metadata?.preScriptError) {
+      throw new Error(`Pre-request script error: ${requestState.metadata.preScriptError}`);
+    }
+
     // ========================================
     // ELECTRON PROCESS - Stages 3, 4, 6, 7
     // ========================================

@@ -14,7 +14,7 @@ export const coreApi = {
   startSearch: (args: { query: string; matchCase: boolean; matchWholeWord: boolean; useRegex: boolean; useMultiline: boolean; searchId: number }) =>
     ipcRenderer.send("search-files:start", args),
   cancelSearch: (searchId: number) => ipcRenderer.send("search-files:cancel", searchId),
-  onSearchResult: (cb: (data: { searchId: number; result: { path: string; line: number; preview: string } }) => void) => {
+  onSearchResult: (cb: (data: { searchId: number; result: { path: string; line: number; col: number; preview: string } }) => void) => {
     const handler = (_: Electron.IpcRendererEvent, data: any) => cb(data);
     ipcRenderer.on("search-files:result", handler);
     return () => ipcRenderer.removeListener("search-files:result", handler);
