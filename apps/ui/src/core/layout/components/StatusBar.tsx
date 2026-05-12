@@ -496,8 +496,8 @@ export const StatusBar = ({
                 {updateProgress.status === "downloading" && (
                   <div className="space-y-1">
                     <div>
-                      <div className="text-[10px] text-text">Downloaded : <span className="text-active">{((updateProgress.transferred || 0) / 1024 / 1024).toFixed(1)} MB / {((updateProgress.total || 0) / 1024 / 1024).toFixed(1)} MB</span></div>
-                      <div className="text-[10px] text-text">Speed : <span className="text-active">{((updateProgress.bytesPerSecond || 0) / 1024 / 1024).toFixed(1)} MB/s</span></div>
+                      <div className="text-[10px] text-text">Downloaded : <span className="text-accent">{((updateProgress.transferred || 0) / 1024 / 1024).toFixed(1)} MB / {((updateProgress.total || 0) / 1024 / 1024).toFixed(1)} MB</span></div>
+                      <div className="text-[10px] text-text">Speed : <span className="text-accent">{((updateProgress.bytesPerSecond || 0) / 1024 / 1024).toFixed(1)} MB/s</span></div>
                     </div>
                   </div>
                 )}
