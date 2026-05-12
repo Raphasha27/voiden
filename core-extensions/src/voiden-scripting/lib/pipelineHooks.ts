@@ -171,7 +171,9 @@ export async function preSendScriptHook(context: any): Promise<void> {
 
   const vdRequest = buildVdRequest(requestState);
   const vdRequestBeforeScript = JSON.parse(JSON.stringify(vdRequest));
-  const variablesApi = buildVariablesApi();
+  const activeEnvKey = await (window as any).electron?.variables?.getActiveEnvKey?.();
+  console.log('[preSendScriptHook] activeEnvKey:', activeEnvKey);
+  const variablesApi = buildVariablesApi(activeEnvKey);
   const envApi = buildEnvApi();
 
   const vdApi: VdApi = {
@@ -265,7 +267,9 @@ export async function postProcessScriptHook(context: any): Promise<void> {
   const vdRequest = buildVdRequest(requestState);
   const vdResponse = buildVdResponse(responseState);
   const vdResponseBeforeScript = JSON.parse(JSON.stringify(vdResponse));
-  const variablesApi = buildVariablesApi();
+  const activeEnvKey = await (window as any).electron?.variables?.getActiveEnvKey?.();
+  console.log('[postProcessScriptHook] activeEnvKey:', activeEnvKey);
+  const variablesApi = buildVariablesApi(activeEnvKey);
   const envApi = buildEnvApi();
 
   const vdApi: VdApi = {

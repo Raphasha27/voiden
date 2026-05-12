@@ -7,7 +7,7 @@
  */
 
 import { executeScript } from './scriptEngine';
-import { buildVdRequest, buildVdResponse } from './vdApi';
+import { buildVdRequest, buildVdResponse, buildVariablesApi, buildEnvApi } from './vdApi';
 import type { VdApi, ScriptExecutionResult, ScriptLanguage } from './types';
 
 export interface ScriptingHelpers {
@@ -32,11 +32,16 @@ export const scriptingHelpers: ScriptingHelpers = {
 
     const vdResponse = responseState ? buildVdResponse(responseState) : undefined;
 
+    // Get active env key and use proper builders
+    const activeEnvKey = await (window as any).electron?.variables?.getActiveEnvKey?.();
+    const variablesApi = buildVariablesApi(activeEnvKey);
+    const envApi = buildEnvApi();
+
     const vdApi: VdApi = {
       request: vdRequest,
       response: vdResponse,
-      env: { get: async () => undefined },
-      variables: { get: async () => undefined, set: async () => {} },
+      env: envApi,
+      variables: variablesApi,
       log: () => {},
       cancel: () => {},
     };
