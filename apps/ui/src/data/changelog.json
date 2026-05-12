@@ -4,8 +4,8 @@
     "date": "12/05/2026",
     "title": "Tab Scrolling, Scripting Docs & Multi-Bug Fixes",
     "description": "Patch release fixing the active tab not scrolling into view when files are opened from the left panel, correcting the Voiden Scripting skill documentation across all three languages, and resolving a batch of bugs in path param variable replacement, the response panel, runtime variable binding, environment editor scrolling, global search, terminal tab visibility, and the post-response script execution error.",
-    "icon": "Bug",
-    "iconColor": "text-red-400",
+    "icon": "Bandage",
+    "iconColor": "text-yellow-400",
     "bgColor": "bg-gradient-to-br from-slate-900 to-red-950",
     "changes": {
       "Added": [
