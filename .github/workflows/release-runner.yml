@@ -24,6 +24,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # core-extensions is gitignored — fetch it from its own repo
+      - name: Clone core-extensions
+        run: git clone https://github.com/VoidenHQ/core-extensions.git core-extensions
+
       - name: Setup Node (with npm registry auth)
         uses: actions/setup-node@v4
         with:
@@ -36,11 +40,12 @@ jobs:
       - name: Install workspace dependencies
         run: yarn install --immutable
 
-      - name: Build @voiden/executors
-        run: yarn workspace @voiden/executors build
-
+      # npm run build handles the full chain:
+      #   prebuild → tsc in core-extensions → tsc in executors
+      #   build    → tsc in voiden-runner
       - name: Build @voiden/runner
-        run: yarn workspace @voiden/runner build
+        working-directory: packages/voiden-runner
+        run: npm run build
 
       # ── Publish to npm ─────────────────────────────────────────────────────
       - name: Publish to npm
