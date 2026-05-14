@@ -29,15 +29,19 @@ import { findPlugin } from './registry.js'
 import { coreExtensions } from '@voiden/core-extensions/registry'
 
 // ─── Per-plugin enabled check ─────────────────────────────────────────────────
-//
-// Core plugins are always enabled and cannot be disabled via the store.
-// Community plugins must be explicitly installed and can be toggled via the store.
 
-function isPluginEnabled(name: string): boolean {
+// Core plugins default to enabled; only skip if explicitly set to false in store.
+function isCorePluginEnabled(name: string): boolean {
   const store = readStore()
-  const storeRecord = store.installedPlugins[name]
-  if (storeRecord !== undefined) return storeRecord.enabled
-  return false
+  const record = store.installedPlugins[name]
+  return record === undefined ? true : record.enabled
+}
+
+// Community plugins default to disabled; must be explicitly installed.
+function isCommunityPluginEnabled(name: string): boolean {
+  const store = readStore()
+  const record = store.installedPlugins[name]
+  return record !== undefined && record.enabled
 }
 
 // ─── Single plugin loader ─────────────────────────────────────────────────────
@@ -87,10 +91,14 @@ export async function loadEnabledPlugins(
   const loaded: string[] = []
 
   // ── Core plugins ──────────────────────────────────────────────────────────
-  // Core plugins are always loaded unless explicitly skipped (e.g. --no-scripts).
+  // Core plugins default to enabled but can be disabled via ~/.voiden/plugins.json.
   for (const def of CORE_PLUGINS) {
     if (skipPlugins.has(def.name)) {
       if (verbose) console.log(`  [plugins] Skipping plugin (--no-scripts): ${def.name}`)
+      continue
+    }
+    if (!isCorePluginEnabled(def.name)) {
+      if (verbose) console.log(`  [plugins] Skipping disabled core plugin: ${def.name}`)
       continue
     }
     const ok = await loadPlugin(def.pluginPath, def.name, verbose)
@@ -110,7 +118,7 @@ export async function loadEnabledPlugins(
 
   const store = readStore()
   for (const [name, record] of Object.entries(store.installedPlugins)) {
-    if (!record.enabled) continue
+    if (!isCommunityPluginEnabled(name)) continue
 
     // Skip if it's a core plugin (already handled above)
     if (findPlugin(name)) continue

@@ -85,7 +85,7 @@ voiden-runner run <paths...> [options]
 
 | Flag | Description |
 |---|---|
-| `-e, --env <path>` | `.env` or `.yaml` file — keys become `{{KEY}}` substitutions |
+| `-e, --env <path>` | Standard `.env` file (`KEY=VALUE`) — merged on top of system env |
 | `--env-var <k=v>` | Individual environment variable override (can be used multiple times) |
 | `--bail` | Stop on first failure, exit 1 |
 | `--stop-on-failure` | Alias for `--bail` (shell `set -e` friendly) |
@@ -96,6 +96,7 @@ voiden-runner run <paths...> [options]
 | `--verbose` | Print script logs, plugin messages, and section dividers |
 | `--json` | Machine-readable JSON output (suppresses normal output) |
 | `--no-session` | Do not load/save session environment or results |
+| `--output-json <file>` | Write the full result object to a JSON file — pass the whole response data to the next CLI or script |
 | `--csv <path>` | Export full report to a CSV file. Use `.` for the current directory (auto-generates filename) |
 | `--mail-to <address>` | Send HTML report to this email address |
 | `--mail-from <address>` | Sender address |
@@ -135,13 +136,14 @@ Generate a combined report from all accumulated results in the current session.
 ```
 voiden-runner plugin install [names...] [--all]
 voiden-runner plugin uninstall <name>
-voiden-runner plugin enable  <name>
+voiden-runner plugin enable  [name] [--all]
 voiden-runner plugin disable [name] [--all]
 voiden-runner plugin list
 ```
 
-Plugin state is persisted to `~/.voiden/plugins.json`. Core plugins are **always enabled**
-and cannot be disabled (except via flags like `--no-scripts`).
+Plugin state is persisted to `~/.voiden/plugins.json` and survives across sessions.
+Core plugins are **enabled by default** but can be disabled individually or all at once.
+Community plugins must be installed before they can be enabled.
 
 **`install` Options**
 
@@ -149,11 +151,17 @@ and cannot be disabled (except via flags like `--no-scripts`).
 |---|---|
 | `--all` | Install all core plugins (makes them explicit in the store). Community plugins must be installed by name. |
 
+**`enable` Options**
+
+| Flag | Description |
+|---|---|
+| `--all` | Re-enable all disabled plugins (core and community). |
+
 **`disable` Options**
 
 | Flag | Description |
 |---|---|
-| `--all` | Disable all installed community plugins. |
+| `--all` | Disable all plugins (core and community). |
 
 ---
 
@@ -161,6 +169,20 @@ and cannot be disabled (except via flags like `--no-scripts`).
 
 Use `{{KEY}}` anywhere in a `.void` file — URL, headers, query params, body,
 assertion expected values.
+
+### Sources (lowest → highest priority)
+
+1. **System environment** — `process.env`, including CI/CD platform variables
+   (GitHub Actions secrets, GitLab CI variables, etc.) — always available, no
+   flag needed
+2. **Session env** — set via `voiden-runner env set KEY=value`, persists across
+   runs
+3. **`--env` file** — standard `.env` file, overrides system + session
+4. **`--env-var` overrides** — per-run inline overrides, highest priority
+
+### `--env` file format
+
+Standard `KEY=VALUE` format only — one variable per line:
 
 ```env
 # .env.staging
@@ -171,6 +193,23 @@ USER_ID=42
 
 ```bash
 voiden-runner run ./requests/ --env .env.staging
+```
+
+### CI/CD — no `--env` file needed
+
+CI/CD platform variables are injected into `process.env` automatically and are
+available as `{{KEY}}` without any `--env` file:
+
+```yaml
+# GitHub Actions
+- run: voiden-runner run tests/
+  env:
+    BASE_URL: ${{ vars.BASE_URL }}       # → {{BASE_URL}}
+    API_KEY:  ${{ secrets.API_KEY }}     # → {{API_KEY}}
+
+# GitLab CI — CI_* variables available automatically
+api-tests:
+  script: voiden-runner run tests/      # {{CI_COMMIT_SHA}}, {{API_KEY}} etc. just work
 ```
 
 Available inside scripts as `vd.env.get('KEY')`.
@@ -321,7 +360,8 @@ voiden-runner session clear
 
 ## Plugins
 
-All core plugins are **always enabled** — no `plugin install` step is needed.
+All core plugins are **enabled by default** — no `plugin install` step is needed.
+They can be disabled individually (`plugin disable <name>`) or all at once (`plugin disable --all`).
 The `plugin install` command is only required for community plugins.
 
 ### `voiden-scripting`
@@ -429,7 +469,7 @@ Reads the `auth` block and injects authentication into the request.
 OAuth 2.0, OAuth 1.0, AWS SigV4, Digest, NTLM — require the desktop app and
 emit a warning when encountered in the runner.
 
-`{{KEY}}` patterns in token/key/value fields are resolved from the `--env` file.
+`{{KEY}}` patterns in token/key/value fields are resolved from system env and the `--env` file.
 
 ---
 
@@ -538,13 +578,109 @@ the system environment.
 
 | Code | Condition |
 |---|---|
-| `0` | Run completed (regardless of HTTP status) — unless `--fail-on-error` or `--bail` |
-| `1` | Any failure when `--fail-on-error`, `--bail`, or `--stop-on-failure` is set |
-| `1` | Usage error (bad flag, no files found, missing `--mail-smtp`, etc.) |
+| `0` | Run completed — unless `--fail-on-error` or `--bail`/`--stop-on-failure` is set |
+| `1` | Any request failed and `--fail-on-error`, `--bail`, or `--stop-on-failure` is set |
+| `1` | Usage error (bad flag, no files found, missing SMTP config, etc.) |
+
+When exiting with code `1` due to failures, a final message is printed:
+
+```
+  ✗  Run failed — 3 requests failed. Exiting with code 1.
+     (use this exit code in your shell script to abort on failure)
+```
+
+This exit code works universally — bash (`$?`), PowerShell (`$LASTEXITCODE`),
+`set -e`, `&&`/`||` chains, GitHub Actions, GitLab CI, Jenkins, CircleCI, and
+any other CI/CD system.
+
+## Passing results to other CLI commands
+
+### `--output-json <file>`
+
+Writes the full result — the whole response object and array — to a JSON file.
+Normal terminal output still shows. The next CLI, script, or tool reads the file
+and gets everything: status, headers, body, assertions, duration.
+
+```bash
+# Write results to a file, then pass the whole object to the next tool
+voiden-runner run auth.void --output-json result.json
+my-deploy-cli --data result.json
+
+# Chain multiple runs — each appends its own file
+voiden-runner run login.void  --output-json login.json
+voiden-runner run users.void  --output-json users.json
+my-report-tool login.json users.json
+```
+
+The JSON structure written to the file is the same as `--json` stdout output:
+
+```json
+{
+  "summary": { "total": 1, "passed": 1, "failed": 0, "totalDurationMs": 342 },
+  "requests": [
+    {
+      "file": "/path/to/auth.void",
+      "protocol": "rest",
+      "method": "POST",
+      "url": "https://api.example.com/auth",
+      "success": true,
+      "status": 200,
+      "durationMs": 342,
+      "body": "{\"access_token\":\"sk-abc\",\"user\":{\"id\":42}}",
+      "requestHeaders": { "Content-Type": "application/json" },
+      "responseHeaders": { "content-type": "application/json" }
+    }
+  ]
+}
+```
+
+### `--json` stdout pipe
+
+Use `--json` to pipe the same structure directly to another command:
+
+```bash
+voiden-runner run auth.void --json | jq .
+voiden-runner run tests/ --json | my-cli --stdin
+voiden-runner run tests/ --json > results.json && python3 analyse.py results.json
+```
+
+### Runtime variable chaining
+
+Variables captured via `{{$res.body.xxx}}` blocks persist to
+`~/.voiden/.process.env.json` between separate `voiden-runner run` calls —
+no piping or files needed:
+
+```bash
+voiden-runner run login.void      # captures token via runtime-variables block
+voiden-runner run users.void      # uses {{process.token}} automatically
+```
 
 ---
 
 ## CI/CD
+
+Works on every CI/CD platform that supports Node.js — GitHub Actions, GitLab CI,
+CircleCI, Jenkins, Azure Pipelines, Bitbucket Pipelines, and more. Install once,
+run anywhere:
+
+```bash
+npm install -g @voiden/runner   # bash / macOS / Linux
+npm install -g @voiden/runner   # PowerShell / Windows cmd — identical
+```
+
+**Windows (cmd.exe / PowerShell)**
+
+```batch
+:: cmd.exe
+voiden-runner run tests\ --env .env.ci --stop-on-failure
+if %ERRORLEVEL% neq 0 exit /b 1
+```
+
+```powershell
+# PowerShell
+voiden-runner run tests/ --env .env.ci --stop-on-failure
+if ($LASTEXITCODE -ne 0) { exit 1 }
+```
 
 ### GitHub Actions
 

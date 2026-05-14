@@ -59,12 +59,18 @@ export function uninstallPlugin(name: string): boolean {
   return true
 }
 
-export function setPluginEnabled(name: string, enabled: boolean): boolean {
+export function setPluginEnabled(name: string, enabled: boolean): void {
   const store = readStore()
-  if (!store.installedPlugins[name]) return false
-  store.installedPlugins[name].enabled = enabled
+  if (!store.installedPlugins[name]) {
+    store.installedPlugins[name] = {
+      name,
+      enabled,
+      installedAt: new Date().toISOString(),
+    }
+  } else {
+    store.installedPlugins[name].enabled = enabled
+  }
   writeStore(store)
-  return true
 }
 
 export function getEnabledPlugins(): InstalledPlugin[] {

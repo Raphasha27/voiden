@@ -92,6 +92,12 @@ export interface RunOptions {
   skipPlugins?: ReadonlySet<string>
   /** Shared in-memory runtime variables map ({{process.xxx}}). Mutated in place after each section. */
   runtimeVars?: Record<string, any>
+  /**
+   * Already-loaded plugin list from a prior loadEnabledPlugins() call.
+   * When provided, plugin loading is skipped — use this to load once per session
+   * when running multiple files.
+   */
+  activePlugins?: string[]
 }
 
 export interface SectionResult {
@@ -113,12 +119,8 @@ export async function runVoidFile(
   const skipPlugins = options.skipPlugins ?? new Set<string>()
   const runtimeVars = options.runtimeVars ?? {}
 
-  // Load plugins FIRST — mirrors the electron app where plugins are loaded at
-  // startup before any document is opened.  This ensures:
-  //   • Parser plugins have registered their onBuildRequest() before we parse blocks
-  //   • Hook plugins have wired into the pipeline before executeRequestPipeline runs
-  //   • Disabled plugins are skipped → their request types fail gracefully
-  const activePlugins = await loadEnabledPlugins(verbose, skipPlugins)
+  // Use pre-loaded plugins if provided (multi-file session), otherwise load fresh.
+  const activePlugins = options.activePlugins ?? await loadEnabledPlugins(verbose, skipPlugins)
 
   const content  = readFileSync(filePath, 'utf-8')
   const sections = parseVoidFileSections(content)

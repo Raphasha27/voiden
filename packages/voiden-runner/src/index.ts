@@ -5,6 +5,7 @@ import { resolve, basename } from 'path'
 import { readdir } from 'fs/promises'
 import chalk from 'chalk'
 import { runVoidFile } from './runner.js'
+import { loadEnabledPlugins } from './plugins/loader.js'
 import { exportToCsv } from './report/csv.js'
 import { sendMailReport } from './report/mail.js'
 import { CORE_PLUGINS, findPlugin } from './plugins/registry.js'
@@ -32,7 +33,6 @@ import {
   clearSession,
 } from './session.js'
 import type { RunResult, CliReportEntry } from './types.js'
-import YAML from 'yaml'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -40,46 +40,13 @@ import YAML from 'yaml'
 
 function loadEnvFile(envPath: string): Record<string, string> {
   const content = readFileSync(envPath, 'utf-8')
-  
-  // Try parsing as YAML first (hierarchical support)
-  if (envPath.endsWith('.yml') || envPath.endsWith('.yaml') || content.trim().startsWith('---') || content.trim().startsWith('{')) {
-    try {
-      const parsed = YAML.parse(content)
-      if (parsed === null || typeof parsed !== 'object') {
-        throw new Error(`YAML file must contain an object (found ${typeof parsed})`)
-      }
-      // Flatten hierarchical YAML into dot-notation keys for the runner
-      const env: Record<string, string> = {}
-      const flatten = (obj: any, prefix = '') => {
-        for (const [key, value] of Object.entries(obj)) {
-          const newKey = prefix ? `${prefix}.${key}` : key
-          if (value && typeof value === 'object' && !Array.isArray(value)) {
-            flatten(value, newKey)
-          } else {
-            env[newKey] = String(value)
-          }
-        }
-      }
-      flatten(parsed)
-      return env
-    } catch (err: any) {
-      if (envPath.endsWith('.yml') || envPath.endsWith('.yaml')) {
-        throw new Error(`Failed to parse YAML file: ${err.message}`)
-      }
-      // Fall back to standard .env parsing if it wasn't explicitly YAML
-    }
-  }
-
-  // Standard .env parsing
   const env: Record<string, string> = {}
   const lines = content.split('\n')
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
     if (!line || line.startsWith('#')) continue
     const eq = line.indexOf('=')
-    if (eq === -1) {
-      throw new Error(`Malformed line ${i + 1} in .env file: missing "="`)
-    }
+    if (eq === -1) throw new Error(`Malformed line ${i + 1} in .env file: missing "="`)
     const key = line.slice(0, eq).trim()
     const val = line.slice(eq + 1).trim().replace(/^["']|["']$/g, '')
     if (!key) throw new Error(`Malformed line ${i + 1} in .env file: empty key`)
@@ -87,6 +54,7 @@ function loadEnvFile(envPath: string): Record<string, string> {
   }
   return env
 }
+
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`
@@ -373,19 +341,28 @@ program
   .option('--verbose', 'Print plugin and script logs')
   .option('--json', 'Output results as JSON (suppresses normal output — useful for CI pipelines)')
   .option('--no-session', 'Do not load/save session environment or results')
+  .option('--output-json <file>', 'Write the full result object to a JSON file — pass to the next CLI, script, or tool')
   .option('--csv <path>', 'Export full report (request + response headers, bodies, assertions) to a CSV file')
   .option('--mail-to <address>', 'Send HTML report to this email address')
   .option('--mail-from <address>', 'Sender address for the report email')
   .option('--mail-subject <subject>', 'Email subject line (default: auto-generated summary)')
   .action(async (paths: string[], opts) => {
-    const env: Record<string, string> = {}
+    // Priority order (lowest → highest):
+    //   system env (process.env) → session env → --env file → --env-var overrides
+    //
+    // System env is the base so GitHub Actions secrets, GitLab CI variables,
+    // and any CI/CD platform vars are automatically available as {{KEY}}
+    // without needing an --env file.
+    const env: Record<string, string> = Object.fromEntries(
+      Object.entries(process.env).filter(([, v]) => v !== undefined) as [string, string][]
+    )
 
-    // 1. Load persisted session env first
+    // 1. Load persisted session env first (overrides system env)
     if (!opts.noSession) {
       Object.assign(env, loadSessionEnv())
     }
 
-    // 2. Load --env file (overrides session)
+    // 2. Load --env file (overrides session + system)
     if (opts.env) {
       const envPath = resolve(opts.env)
       if (!existsSync(envPath)) {
@@ -444,7 +421,6 @@ program
 
     const runStart = Date.now()
     let anyFailed = false
-    let activePluginsSnapshot: string[] = []
     const allResults: Array<{ file: string; result: RunResult }> = []
 
     // In-memory runtime variables — shared across all files in this run.
@@ -464,16 +440,18 @@ program
       }
     }
 
+    // Load plugins once for the entire session — not once per file.
+    const skipPlugins = opts.noScripts ? new Set(['voiden-scripting']) : new Set<string>()
+    const activePlugins = await loadEnabledPlugins(opts.verbose ?? false, skipPlugins)
+
     // Collect results
     for (let i = 0; i < resolvedFiles.length; i++) {
       const file = resolvedFiles[i]
       const stopSpinner = opts.json ? () => {} : startSpinner(`[${i + 1}/${resolvedFiles.length}]  ${basename(file)}`)
 
       try {
-        const skipPlugins = opts.noScripts ? new Set(['voiden-scripting']) : new Set<string>()
-        const { results, activePlugins } = await runVoidFile(file, { env, verbose: opts.verbose, skipPlugins, runtimeVars })
+        const { results } = await runVoidFile(file, { env, verbose: opts.verbose, skipPlugins, runtimeVars, activePlugins })
         stopSpinner()
-        activePluginsSnapshot = activePlugins
         for (const { result } of results) {
           if (!result.success) anyFailed = true
           allResults.push({ file, result })
@@ -521,9 +499,9 @@ program
     }
 
     if (opts.json) {
-      printRunSummaryJson(allResults, totalMs, activePluginsSnapshot)
+      printRunSummaryJson(allResults, totalMs, activePlugins)
     } else {
-      printRunHeader(resolvedFiles.length, activePluginsSnapshot.length)
+      printRunHeader(resolvedFiles.length, activePlugins.length)
       for (let i = 0; i < allResults.length; i++) {
         const { file, result } = allResults[i]
         printRequestResult(result, file, i + 1, allResults.length, opts.showBody ?? false, opts.verbose ?? false)
@@ -561,9 +539,30 @@ program
       }
     }
 
-    if ((opts.failOnError || stopOnFailure) && anyFailed) {
-      process.exit(1)
+    // ── Output JSON to file ───────────────────────────────────────────────────
+    if (opts.outputJson) {
+      const jsonData = {
+        summary: {
+          total: allResults.length,
+          passed: allResults.filter(r => r.result.success).length,
+          failed: allResults.filter(r => !r.result.success).length,
+          totalDurationMs: Date.now() - runStart,
+          activePlugins,
+        },
+        requests: allResults.map(r => ({ file: r.file, ...r.result })),
+      }
+      writeFileSync(opts.outputJson, JSON.stringify(jsonData, null, 2) + '\n', 'utf-8')
+      if (!opts.json) console.log(chalk.gray(`  ↳ Results written to ${opts.outputJson}`))
     }
+
+    const shouldFail = (opts.failOnError || stopOnFailure) && anyFailed
+    if (shouldFail && !opts.json) {
+      const failedCount = allResults.filter(r => !r.result.success).length
+      console.log(chalk.red(`  ✗  Run failed — ${failedCount} request${failedCount !== 1 ? 's' : ''} failed. Exiting with code 1.`))
+      console.log(chalk.gray('     (use this exit code in your shell script to abort on failure)'))
+      console.log()
+    }
+    process.exit(shouldFail ? 1 : 0)
   })
 
 // ── voiden-runner env ─────────────────────────────────────────────────────────
@@ -815,11 +814,40 @@ pluginCmd
     }
   })
 
-// voiden-runner plugin enable <name>
+// voiden-runner plugin enable [name] --all
 pluginCmd
-  .command('enable <name>')
-  .description('Enable a previously disabled plugin\n\n  Example:\n    voiden-runner plugin enable voiden-scripting\n')
-  .action(async (name: string) => {
+  .command('enable [name]')
+  .description(
+    'Enable a previously disabled plugin\n\n' +
+    '  Examples:\n' +
+    '    voiden-runner plugin enable voiden-scripting\n' +
+    '    voiden-runner plugin enable --all\n'
+  )
+  .option('--all', 'Enable all disabled plugins (core and community)')
+  .action(async (name: string | undefined, opts: { all?: boolean }) => {
+    if (opts.all) {
+      const store = readStore()
+      // Re-enable all explicitly disabled plugins (core + community)
+      const disabled = Object.entries(store.installedPlugins)
+        .filter(([, r]) => !r.enabled)
+        .map(([n]) => n)
+      // Also ensure all core plugins that were never in the store are treated as enabled (default)
+      const disabledCoreNotInStore: string[] = []
+      if (disabled.length === 0 && disabledCoreNotInStore.length === 0) {
+        console.log(chalk.gray('  All plugins are already enabled.'))
+        return
+      }
+      for (const n of disabled) {
+        setPluginEnabled(n, true)
+        console.log(chalk.green(`  ✓  Enabled`) + ` ${n}`)
+      }
+      console.log(chalk.gray(`  ${disabled.length} plugin(s) enabled.`))
+      return
+    }
+    if (!name) {
+      console.error(chalk.red('  Specify a plugin name or use --all'))
+      process.exit(1)
+    }
     const communityPlugins = await fetchCommunityPlugins()
     const commDef = findCommunityPlugin(name, communityPlugins)
     if (commDef && !hasCommunityRunner(name)) {
@@ -827,12 +855,8 @@ pluginCmd
       console.log(chalk.gray(`     Run: voiden-runner plugin install ${name}`))
       process.exit(1)
     }
-    const ok = setPluginEnabled(name, true)
-    if (ok) {
-      console.log(chalk.green(`  ✓  Enabled`) + ` ${name}`)
-    } else {
-      console.log(chalk.yellow(`  ⚠  Plugin "${name}" is not installed — run: voiden-runner plugin install ${name}`))
-    }
+    setPluginEnabled(name, true)
+    console.log(chalk.green(`  ✓  Enabled`) + ` ${name}`)
   })
 
 // voiden-runner plugin disable [name] --all
@@ -844,38 +868,33 @@ pluginCmd
     '    voiden-runner plugin disable voiden-scripting\n' +
     '    voiden-runner plugin disable --all\n'
   )
-  .option('--all', 'Disable all installed community plugins')
+  .option('--all', 'Disable all plugins (core and community)')
   .action((name: string | undefined, opts: { all?: boolean }) => {
     if (opts.all) {
-      const store = readStore()
-      const names = Object.keys(store.installedPlugins).filter(n => !findPlugin(n))
-      if (names.length === 0) {
-        console.log(chalk.gray('  No installed community plugins to disable.'))
-        return
+      // Disable all core plugins
+      for (const def of CORE_PLUGINS) {
+        setPluginEnabled(def.name, false)
+        console.log(chalk.yellow(`  ·  Disabled`) + ` ${def.name}`)
       }
-      for (const n of names) {
+      // Disable all installed community plugins
+      const store = readStore()
+      const communityNames = Object.keys(store.installedPlugins).filter(n => !findPlugin(n))
+      for (const n of communityNames) {
         setPluginEnabled(n, false)
         console.log(chalk.yellow(`  ·  Disabled`) + ` ${n}`)
       }
-      console.log(chalk.gray(`  ${names.length} plugin(s) disabled.`))
+      const total = CORE_PLUGINS.length + communityNames.length
+      console.log(chalk.gray(`  ${total} plugin(s) disabled.`))
       return
     }
     if (!name) {
       console.error(chalk.red('  Specify a plugin name or use --all'))
       process.exit(1)
     }
+    setPluginEnabled(name, false)
+    console.log(chalk.yellow(`  ·  Disabled`) + ` ${name}`)
     if (findPlugin(name)) {
-      console.log(chalk.yellow(`  ⚠  Core plugin "${name}" is always enabled and cannot be disabled`))
-      if (name === 'voiden-scripting') {
-        console.log(chalk.gray('     Use: voiden-runner run --no-scripts to skip scripting during execution'))
-      }
-      return
-    }
-    const ok = setPluginEnabled(name, false)
-    if (ok) {
-      console.log(chalk.yellow(`  ·  Disabled`) + ` ${name}`)
-    } else {
-      console.log(chalk.yellow(`  ⚠  Plugin "${name}" is not installed`))
+      console.log(chalk.gray(`     Core plugin disabled. Re-enable with: voiden-runner plugin enable ${name}`))
     }
   })
 
@@ -892,7 +911,11 @@ pluginCmd
     console.log(DIVIDER)
 
     for (const def of CORE_PLUGINS) {
-      const statusBadge = chalk.green('  ✓ always enabled')
+      const record = store.installedPlugins[def.name]
+      const isDisabled = record !== undefined && !record.enabled
+      const statusBadge = isDisabled
+        ? chalk.yellow('  · disabled')
+        : chalk.green('  ✓ enabled')
       console.log(`  ${chalk.bold(def.name.padEnd(24))}${statusBadge}`)
       console.log(chalk.gray(`    ${def.description}`))
     }
