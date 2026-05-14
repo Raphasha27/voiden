@@ -4,14 +4,15 @@
 # This script removes all node_modules, dist, and cache folders, then performs a clean install and build
 #
 # What this script does:
-# 1. Removes all node_modules folders
-# 2. Removes all dist folders (compiled output)
-# 3. Clears TypeScript build cache
-# 4. Clears Vite cache
-# 5. Removes build artifacts
-# 6. Clears Yarn cache (optional)
-# 7. Runs yarn install
-# 8. Builds packages in dependency order (SDK -> Shared -> Core Extensions)
+# 1. Fetches core-extensions from VoidenHQ/core-extensions (git clone or pull)
+# 2. Removes all node_modules folders
+# 3. Removes all dist folders (compiled output)
+# 4. Clears TypeScript build cache
+# 5. Clears Vite cache
+# 6. Removes build artifacts
+# 7. Clears Yarn cache (optional)
+# 8. Runs yarn install
+# 9. Builds packages in dependency order (Core Extensions -> executors)
 #    - Core Extensions automatically runs 'yarn generate-registry' as prebuild step
 
 set -e  # Exit on error
@@ -29,6 +30,20 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Step 0: Fetch core-extensions from GitHub
+echo -e "${YELLOW}=📦 Fetching core-extensions from VoidenHQ/core-extensions...${NC}"
+CORE_EXT_REPO="https://github.com/VoidenHQ/core-extensions.git"
+if [ -d "core-extensions/.git" ]; then
+  echo "  core-extensions already cloned — pulling latest..."
+  git -C core-extensions pull
+else
+  echo "  Cloning core-extensions..."
+  rm -rf core-extensions
+  git clone "$CORE_EXT_REPO" core-extensions
+fi
+echo -e "${GREEN}✓ core-extensions fetched${NC}"
+echo ""
 
 # Step 1: Remove all node_modules folders
 echo -e "${YELLOW}=📦 Removing all node_modules folders...${NC}"

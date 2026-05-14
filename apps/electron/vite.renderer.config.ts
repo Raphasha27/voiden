@@ -26,7 +26,7 @@ export default defineConfig((env) => {
     },
     plugins: [pluginExposeRenderer(name), nodePolyfills()],
     resolve: {
-      preserveSymlinks: false, // Allow Vite to follow symlinks for workspace packages
+      preserveSymlinks: false,
       alias: {
         "@": path.resolve(__dirname, "../ui/src"),
         "voiden-wrapper": path.resolve(__dirname, "../../packages/voiden-wrapper/dist"),

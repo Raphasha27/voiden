@@ -1,0 +1,626 @@
+# @voiden/runner
+
+Headless CLI runner for [Voiden](https://voiden.app) — execute `.void` files
+outside the app, in terminals, and CI/CD pipelines.
+
+`.void` files are created and edited inside the **Voiden desktop app**.
+This package runs them anywhere Node.js ≥ 18 is available: local terminals,
+GitHub Actions, GitLab CI, Docker, and more.
+
+---
+
+## Table of contents
+
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Commands](#commands)
+  - [run](#run)
+  - [env](#env)
+  - [session](#session)
+  - [report](#report)
+  - [plugin](#plugin)
+- [Environment variables](#environment-variables)
+- [Runtime variables](#runtime-variables)
+- [Sessions & Persistence](#sessions--persistence)
+- [Plugins](#plugins)
+  - [voiden-scripting](#voiden-scripting)
+  - [simple-assertions](#simple-assertions)
+  - [voiden-faker](#voiden-faker)
+  - [voiden-advanced-auth](#voiden-advanced-auth)
+  - [voiden-graphql](#voiden-graphql)
+- [Output formats](#output-formats)
+- [Reports — CSV and email](#reports--csv-and-email)
+- [Exit codes](#exit-codes)
+- [CI/CD](#cicd)
+- [Supported protocols](#supported-protocols)
+
+---
+
+## Installation
+
+```bash
+npm install -g @voiden/runner
+```
+
+Requires Node.js 18 or later.
+
+---
+
+## Quick start
+
+```bash
+# Run a single file
+voiden-runner run auth.void
+
+# Run an entire folder recursively
+voiden-runner run ./requests/
+
+# With environment variable substitution
+voiden-runner run ./requests/ --env .env.staging
+
+# Stop on first failure (CI-friendly)
+voiden-runner run ./tests/ --env .env.ci --stop-on-failure
+
+# Export report to CSV + send by email
+# SMTP settings (host, user, etc.) are read from your .env file
+voiden-runner run ./tests/ \
+  --env .env.staging \
+  --csv ./results/report.csv \
+  --mail-to team@company.com
+```
+
+---
+
+## Commands
+
+### `run`
+
+```
+voiden-runner run <paths...> [options]
+```
+
+`<paths...>` accepts any mix of files, directories (recursive), and glob patterns.
+
+**Options**
+
+| Flag | Description |
+|---|---|
+| `-e, --env <path>` | `.env` or `.yaml` file — keys become `{{KEY}}` substitutions |
+| `--env-var <k=v>` | Individual environment variable override (can be used multiple times) |
+| `--bail` | Stop on first failure, exit 1 |
+| `--stop-on-failure` | Alias for `--bail` (shell `set -e` friendly) |
+| `--fail-on-error` | Run all files first, then exit 1 if any failed |
+| `--no-scripts` | Skip the `voiden-scripting` plugin entirely (recommended for CI/CD) |
+| `--no-cache-vars` | Do not load/save runtime variables to `~/.voiden/.process.env.json` |
+| `--show-body` | Print the full response body under each result |
+| `--verbose` | Print script logs, plugin messages, and section dividers |
+| `--json` | Machine-readable JSON output (suppresses normal output) |
+| `--no-session` | Do not load/save session environment or results |
+| `--csv <path>` | Export full report to a CSV file. Use `.` for the current directory (auto-generates filename) |
+| `--mail-to <address>` | Send HTML report to this email address |
+| `--mail-from <address>` | Sender address |
+| `--mail-subject <text>` | Email subject (default: auto-generated summary) |
+
+### `env`
+
+```
+voiden-runner env set <key=value...>
+voiden-runner env list
+voiden-runner env remove <keys...>
+voiden-runner env clear
+```
+
+Manage environment variables that persist across the session.
+
+### `session`
+
+```
+voiden-runner session status
+voiden-runner session clear
+```
+
+`status` shows counts of stored variables and results. `clear` wipes all session
+state (env, results, runtime vars).
+
+### `report`
+
+```
+voiden-runner report [--csv <path>] [--mail-to <address>]
+```
+
+Generate a combined report from all accumulated results in the current session.
+
+### `plugin`
+
+```
+voiden-runner plugin install [names...] [--all]
+voiden-runner plugin uninstall <name>
+voiden-runner plugin enable  <name>
+voiden-runner plugin disable [name] [--all]
+voiden-runner plugin list
+```
+
+Plugin state is persisted to `~/.voiden/plugins.json`. Core plugins are **always enabled**
+and cannot be disabled (except via flags like `--no-scripts`).
+
+**`install` Options**
+
+| Flag | Description |
+|---|---|
+| `--all` | Install all core plugins (makes them explicit in the store). Community plugins must be installed by name. |
+
+**`disable` Options**
+
+| Flag | Description |
+|---|---|
+| `--all` | Disable all installed community plugins. |
+
+---
+
+## Environment variables
+
+Use `{{KEY}}` anywhere in a `.void` file — URL, headers, query params, body,
+assertion expected values.
+
+```env
+# .env.staging
+BASE_URL=https://staging.api.example.com
+API_KEY=sk-staging-abc123
+USER_ID=42
+```
+
+```bash
+voiden-runner run ./requests/ --env .env.staging
+```
+
+Available inside scripts as `vd.env.get('KEY')`.
+
+---
+
+## Runtime variables
+
+Runtime variables let requests **chain** — a value extracted from one response
+becomes available in the next request as `{{process.KEY}}`.
+
+### How it works
+
+1. Add a **runtime-variables block** to a `.void` file (use `/runtime-variables`
+   slash command in the Voiden app).
+2. Each row maps a **variable name** to a **capture expression** — a
+   `{{$res.xxx}}` or `{{$req.xxx}}` path into the request or response.
+3. After the request completes, the runner evaluates every enabled row and
+   stores the captured values **in memory** for the rest of the run.
+4. In any subsequent request (same file or later files), use `{{process.KEY}}`
+   to substitute the captured value.
+
+### Capture expression syntax
+
+| Expression | Captures |
+|---|---|
+| `{{$res.body.access_token}}` | JSON field from response body |
+| `{{$res.body.data.items[0].id}}` | Nested path with array index |
+| `{{$res.headers.X-Request-Id}}` | Response header |
+| `{{$res.status}}` | HTTP status code |
+| `{{$res.statusText}}` | HTTP status text |
+| `{{$res.time}}` | Response time in ms |
+| `{{$req.headers.Authorization}}` | Header from the sent request |
+| `{{$req.url}}` | Final URL (after variable substitution) |
+
+### Substitution syntax
+
+Use `{{process.KEY}}` in URLs, headers, query params, body, and path params:
+
+```
+GET {{process.baseUrl}}/users/{{process.userId}}
+Authorization: Bearer {{process.token}}
+```
+
+### Script access
+
+Inside pre-request and post-response scripts:
+
+```javascript
+// Read a runtime variable
+const token = vd.variables.get('token')
+
+// Write a runtime variable (available to all subsequent requests in this run)
+vd.variables.set('token', vd.response.body.access_token)
+```
+
+### Persistence
+
+By default, runtime variables are **persisted to disk** at `~/.voiden/.process.env.json`.
+This allows you to share state across multiple `voiden-runner` commands.
+
+- **To disable persistence** (keep variables in-memory only for a single run), use the `--no-cache-vars` flag.
+- **To clear variables**, delete the `.process.env.json` file or overwrite them in a script.
+
+The `.void` files themselves are never modified. This ensures that your source
+files remain clean while still allowing for stateful execution chains.
+
+### Example — auth chain
+
+**1. `login.void`** — POST /auth/login
+
+```
+runtime-variables block:
+  token  →  {{$res.body.access_token}}
+  userId →  {{$res.body.user.id}}
+```
+
+**2. `get-profile.void`** — GET /users/{{process.userId}}
+
+```
+Authorization: Bearer {{process.token}}
+```
+
+Run them in order:
+
+```bash
+voiden-runner run login.void get-profile.void --env .env
+```
+
+The `token` and `userId` captured from `login.void` are automatically available
+in `get-profile.void`.
+
+---
+
+## Sessions & Persistence
+
+By default, `voiden-runner` operates in a **stateful session**. This means it
+persists environment variables, captured runtime variables, and run results
+across multiple command invocations until you explicitly clear them.
+
+### Environment variables (`env`)
+
+You can set environment variables once and use them in all subsequent runs
+without passing `--env` every time.
+
+```bash
+# Set variables
+voiden-runner env set BASE_URL=https://api.example.com
+voiden-runner env set API_KEY=sk_test_123
+
+# List current session variables
+voiden-runner env list
+
+# Run files (automatically uses the variables above)
+voiden-runner run auth.void
+```
+
+### Accumulated Results & Reporting
+
+Every time you call `run`, the results are appended to a session results file.
+This allows you to generate a single report for a series of separate runs.
+
+```bash
+voiden-runner run login.void
+voiden-runner run users.void
+voiden-runner run posts.void
+
+# Generate a combined CSV report for all 3 runs
+voiden-runner report --csv ./session-report.csv
+
+# Email the combined report
+voiden-runner report --mail-to qa@company.com
+```
+
+### Managing the Session
+
+Use the `session` command to check status or wipe all state.
+
+```bash
+# See how many variables and results are stored
+voiden-runner session status
+
+# Wipe everything (env, results, and runtime variables)
+voiden-runner session clear
+```
+
+---
+
+## Plugins
+
+All core plugins are **always enabled** — no `plugin install` step is needed.
+The `plugin install` command is only required for community plugins.
+
+### `voiden-scripting`
+
+Executes **pre-request** (`pre_script`) and **post-response** (`post_script`)
+scripts embedded in the `.void` file.
+
+**Languages supported in the runner:**
+
+| Language | How it runs |
+|---|---|
+| JavaScript | In-process `AsyncFunction` — zero overhead |
+| Python | `python3` subprocess (detected at startup; clear error if missing) |
+| Shell (bash) | `bash` subprocess with temp file isolation |
+
+> **Security note for CI/CD:** Python and Shell scripts can execute arbitrary
+> system commands. Use `--no-scripts` to disable all script execution when
+> running `.void` files from untrusted sources.
+
+**`vd` API inside scripts**
+
+| Property / Method | Description |
+|---|---|
+| `vd.request.url` | Request URL (read/write in pre-script) |
+| `vd.request.method` | HTTP method (read/write in pre-script) |
+| `vd.request.headers` | Headers array `[{key, value}]` (read/write) |
+| `vd.request.body` | Request body string (read/write) |
+| `vd.request.queryParams` | Query params array (read/write) |
+| `vd.request.pathParams` | Path params array (read/write) |
+| `vd.response` | Response object (post-script only) |
+| `vd.response.status` | HTTP status code |
+| `vd.response.body` | Parsed response body |
+| `vd.response.headers` | Response headers `{key: value}` |
+| `vd.env.get('KEY')` | Read from `--env` file |
+| `vd.variables.get('KEY')` | Read a runtime variable |
+| `vd.variables.set('KEY', val)` | Write a runtime variable (available to next request) |
+| `vd.assert(actual, op, expected, msg?)` | Emit a pass/fail assertion |
+| `vd.log(level?, ...args)` | Emit a log line (`--verbose` to see them) |
+| `vd.cancel()` | Cancel the request from a pre-script |
+
+**Assertion operators:** `==` `===` `!=` `!==` `>` `>=` `<` `<=`
+`contains` `includes` `matches` (regex) `truthy` `falsy`
+`eq` `neq` `gte` `lte` `greater` `less`
+
+**Example — pre-script adds a timestamp header:**
+
+```javascript
+vd.request.headers.push({ key: 'X-Run-Ts', value: String(Date.now()), enabled: true })
+vd.log('info', 'Added X-Run-Ts')
+```
+
+**Example — post-script asserts and captures a token:**
+
+```javascript
+const body = vd.response.body
+vd.assert(vd.response.status, '==', 200, 'status is 200')
+vd.assert(body.access_token, 'truthy', null, 'token present')
+vd.variables.set('token', body.access_token)
+```
+
+---
+
+### `simple-assertions`
+
+Evaluates assertion rows from an `assertions-table` block against the response.
+
+**Field path syntax** (the `field` column):
+
+| Path | Resolves to |
+|---|---|
+| `status` | HTTP status code |
+| `statusText` | HTTP status text |
+| `responseTime` | Response time in ms |
+| `header.<Name>` | A response header value |
+| `body.data.id` | JSON path into the parsed body |
+| `body.items[0].name` | Array index access |
+
+**Operators:** `equals` `notEquals` `contains` `notContains` `startsWith`
+`endsWith` `greaterThan` `lessThan` `gte` `lte` `isEmpty` `isNotEmpty`
+`isNull` `isNotNull` `matches` `exists` `notExists`
+
+Assertion results appear under the request result line and in CSV/email reports.
+
+---
+
+### `voiden-faker`
+
+Replaces `{{$faker.category.method(args)}}` patterns before the request is sent.
+
+```
+{{$faker.person.firstName()}}
+{{$faker.internet.email()}}
+{{$faker.string.uuid()}}
+{{$faker.number.int({"min":1,"max":100})}}
+```
+
+---
+
+### `voiden-advanced-auth`
+
+Reads the `auth` block and injects authentication into the request.
+
+**Auth types in the runner:** `bearer` `basic` `apiKey` (header or query)
+
+OAuth 2.0, OAuth 1.0, AWS SigV4, Digest, NTLM — require the desktop app and
+emit a warning when encountered in the runner.
+
+`{{KEY}}` patterns in token/key/value fields are resolved from the `--env` file.
+
+---
+
+### `voiden-graphql`
+
+Rewrites `gqlquery` + `gqlvariables` blocks as a standard GraphQL-over-HTTP
+POST (`Content-Type: application/json`, body `{query, variables}`).
+
+---
+
+## Output formats
+
+### Default (human-readable)
+
+```
+  voiden-runner · 3 files · 5 plugins active
+────────────────────────────────────────────────────────────────
+
+[1/3] auth.void
+  ✓  REST POST  https://api.example.com/auth  200 OK  342ms  1.2KB
+
+[2/3] users.void
+  ✓  REST GET   https://api.example.com/users  200 OK  128ms
+       assertions: 3 passed
+       ✓  status is 200
+       ✓  body has items
+       ✓  items count > 0
+
+[3/3] delete-missing.void
+  ✗  REST DELETE  https://api.example.com/users/999  404 Not Found  89ms
+       assertions: 1 passed · 1 failed
+       ✗  status is 200  (got 404, expected == 200)
+
+────────────────────────────────────────────────────────────────
+  Summary  3 requests  ·  2 passed  ·  1 failed  ·  559ms total
+────────────────────────────────────────────────────────────────
+```
+
+### `--json`
+
+```json
+{
+  "summary": { "total": 3, "passed": 2, "failed": 1, "totalDurationMs": 559, "activePlugins": ["..."] },
+  "requests": [
+    {
+      "file": "/path/to/auth.void",
+      "protocol": "rest", "method": "POST", "url": "...",
+      "success": true, "status": 200, "durationMs": 342,
+      "requestHeaders": { "Content-Type": "application/json" },
+      "requestBody": "{\"email\":\"...\"}",
+      "responseHeaders": { "content-type": "application/json" },
+      "body": "{\"access_token\":\"...\"}",
+      "reportEntries": []
+    }
+  ]
+}
+```
+
+---
+
+## Reports — CSV and email
+
+### CSV
+
+```bash
+# Write to a specific file
+voiden-runner run ./tests/ --csv ./results/report.csv
+
+# Write to the current directory (auto-generates filename: voiden-report-<timestamp>.csv)
+voiden-runner run ./tests/ --csv .
+```
+
+CSV columns: `File`, `Protocol`, `Method`, `URL`, `Success`, `Status`,
+`StatusText`, `DurationMs`, `SizeBytes`, `Error`, `RequestHeaders`,
+`RequestBody`, `ResponseHeaders`, `ResponseBody`, `AssertionsPassed`,
+`AssertionsFailed`, `AssertionDetail`
+
+### Email
+
+```bash
+voiden-runner run ./tests/ \
+  --env .env.ci \
+  --mail-to qa@company.com
+```
+
+Sends a dark-themed HTML report with per-request cards showing request/response
+headers, bodies, and assertion results. Subject line is auto-generated from the
+pass/fail summary unless `--mail-subject` is provided.
+
+**SMTP Configuration**
+
+The runner reads SMTP settings from your `.env` file (passed via `--env`) or
+the system environment.
+
+| Variable | Description |
+|---|---|
+| `VOIDEN_SMTP_HOST` | **Required** for email. SMTP server hostname (e.g., `smtp.gmail.com`). |
+| `VOIDEN_SMTP_PORT` | SMTP port. Defaults to `587` (or `465` if secure). |
+| `VOIDEN_SMTP_SECURE` | Set to `true` to use TLS/SSL (port 465). |
+| `VOIDEN_SMTP_USER` | SMTP login username. |
+| `VOIDEN_SMTP_PASS` | SMTP login password. |
+
+---
+
+## Exit codes
+
+| Code | Condition |
+|---|---|
+| `0` | Run completed (regardless of HTTP status) — unless `--fail-on-error` or `--bail` |
+| `1` | Any failure when `--fail-on-error`, `--bail`, or `--stop-on-failure` is set |
+| `1` | Usage error (bad flag, no files found, missing `--mail-smtp`, etc.) |
+
+---
+
+## CI/CD
+
+### GitHub Actions
+
+```yaml
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+
+      - run: npm install -g @voiden/runner
+
+      - name: Write env
+        run: |
+          echo "BASE_URL=${{ secrets.BASE_URL }}" >> .env.ci
+          echo "API_KEY=${{ secrets.API_KEY }}"   >> .env.ci
+
+      - name: Run tests
+        run: |
+          voiden-runner run ./tests/ \
+            --env .env.ci \
+            --no-scripts \
+            --stop-on-failure \
+            --json | tee results.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: api-test-results, path: results.json }
+```
+
+### GitLab CI
+
+```yaml
+api-tests:
+  image: node:20
+  script:
+    - npm install -g @voiden/runner
+    - echo "BASE_URL=$BASE_URL" >> .env.ci
+    - echo "API_KEY=$API_KEY"   >> .env.ci
+    - voiden-runner run ./tests/ --env .env.ci --no-scripts --stop-on-failure
+```
+
+### With scripting enabled
+
+If your `.void` files use `voiden-scripting` blocks and you trust the content:
+
+```bash
+# JavaScript only (no Python/Shell risk)
+voiden-runner run ./tests/ --env .env.ci --stop-on-failure
+
+# With Python — ensure python3 is available in the runner image
+# python3 --version   →  Python 3.x.x
+voiden-runner run ./tests/ --env .env.ci --stop-on-failure
+```
+
+### Request chaining in CI
+
+Variables captured via runtime-variable blocks are shared across all files in a
+single `voiden-runner run` invocation:
+
+```bash
+# login.void captures {{token}}, get-users.void uses {{process.token}}
+voiden-runner run login.void get-users.void create-post.void \
+  --env .env.ci \
+  --stop-on-failure
+```
+
+---
+
+## Supported protocols
+
+| Protocol | Block types |
+|---|---|
+| REST (HTTP/HTTPS) | `method`, `url`, `headers-table`, `query-table`, `json_body`, … |
+| WebSocket (`ws://` / `wss://`) | `socket-request`, `surl`, `smethod` |
+| gRPC (`grpc://` / `grpcs://`) | `socket-request`, `proto`, `grpc-messages-node` |
+| GraphQL | `gqlquery`, `gqlvariables` |

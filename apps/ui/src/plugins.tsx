@@ -286,7 +286,15 @@ export const getTableSuggestions = (
 
 export const createPlugin = (pluginModule: (context: PluginContext) => Plugin, extensionId: string) => {
   // Define the API that your plugins will use.
-  const context: PluginContext = {
+  const context: PluginContext & { pipeline: any } = {
+    // Provide pipeline API so plugins never need to import @voiden/executors directly.
+    // The hookRegistry is imported from the app's pipeline alias (same singleton).
+    pipeline: {
+      registerHook: async (stage: string, handler: any, priority?: number) => {
+        const { hookRegistry } = await import('@/core/request-engine/pipeline');
+        hookRegistry.registerHook(extensionId, stage as any, handler, priority);
+      },
+    },
     exposeHelpers: (helpers: PluginHelpers) => {
       extensionLogger.info(`Plugin "${extensionId}" exposing helpers:`, Object.keys(helpers));
       exposedHelpers[extensionId] = helpers;

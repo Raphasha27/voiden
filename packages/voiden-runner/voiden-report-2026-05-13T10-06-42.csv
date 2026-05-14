@@ -1,0 +1,25 @@
+File,Protocol,Method,URL,Success,Status,StatusText,DurationMs,SizeBytes,Error,RequestHeaders,RequestBody,ResponseHeaders,ResponseBody,AssertionsPassed,AssertionsFailed,AssertionDetail
+/Users/phurpatsering/Desktop/Voiden-OpenSource/voiden/packages/voiden-runner/GRPC.void,rest,POST,https://countries.trevorblades.com/,true,200,,898.0047500000001,228,,Content-Type: application/json,"{""query"":""query Continent($code: ID!) {\n  continent(code: $code) {\n    code\n    countries\n  }\n}"",""variables"":{""code"":""113231jkbsabd""},""operationName"":""Continent""}","access-control-allow-credentials: true
+access-control-allow-headers: *
+access-control-allow-methods: POST, GET, HEAD, OPTIONS
+access-control-allow-origin: *
+access-control-expose-headers: *
+access-control-max-age: 600
+alt-svc: h3="":443""; ma=86400
+cache-control: s-maxage=0, no-cache, no-store, must-revalidate
+connection: close
+content-encoding: br
+content-length: 203
+content-type: application/json; charset=utf-8
+date: Wed, 13 May 2026 10:06:42 GMT
+gcdn-cache: PASS
+gcdn-passed-through-response: has-errors
+stellate-rate-limit-budget-remaining: 49
+stellate-rate-limit-budget-required: 6
+stellate-rate-limit-decision: pass
+stellate-rate-limit-rules: ""IP limit"";type=""RequestCount"";budget=50;limited=?0;remaining=49;refill=60
+vary: accept-encoding
+x-cache: MISS
+x-cache-hits: 0
+x-powered-by: Stellate
+x-served-by: cache-del-vibw2260028-DEL","{""errors"":[{""message"":""Field \""countries\"" of type \""[Country!]!\"" must have a selection of subfields. Did you mean \""countries { ... }\""?"",""locations"":[{""line"":4,""column"":5}],""extensions"":{""code"":""GRAPHQL_VALIDATION_FAILED""}}]}",0,0,

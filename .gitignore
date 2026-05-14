@@ -54,3 +54,9 @@ apps/electron/skills/core/
 
 # Local Windows native module patches (not needed on CI/macOS/Linux)
 patches/win-native-fixes/
+
+packages/voiden-runner/dist
+packages/executors/dist
+
+# core-extensions is fetched from VoidenHQ/core-extensions by cleanup.sh
+core-extensions/
