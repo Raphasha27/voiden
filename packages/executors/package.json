@@ -4,6 +4,9 @@
   "description": "Shared protocol executors for Voiden — REST, WebSocket, gRPC",
   "type": "module",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=18"
   },

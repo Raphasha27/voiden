@@ -31,9 +31,7 @@ async function sendSecure(
   const adapter: SecureRequestAdapter = {
     replaceVar: (text: string) => Promise.resolve(replaceEnvVars(text, env)),
     readFile: (filePath: string) => readFile(filePath),
-    // isElectron defaults to true — executeSecureRequest returns a handoff for
-    // WS/gRPC (same as the Electron app). The socket plugin's onProcessResponse
-    // hook handles the actual connection after receiving the handoff response.
+    isElectron: false, // CLI: connect inline and return a report in the body
   }
 
   try {
@@ -77,6 +75,8 @@ async function sendSecure(
     return {
       status:        result.status,
       statusText:    result.statusText,
+      statusCode:    result.status,
+      statusMessage: result.statusText,
       headers:       result.headers,
       body:          result.body,
       protocol:      result.protocol,
