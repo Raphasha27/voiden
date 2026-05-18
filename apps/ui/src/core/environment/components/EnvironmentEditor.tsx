@@ -377,7 +377,7 @@ const VariableTableRow = ({
           style={{ "--tw-ring-color": "var(--icon-primary)" } as React.CSSProperties}
         />
       </td>
-      <td className="px-2 py-1.5 max-w-[280px]">
+      <td className="px-2 py-1.5 overflow-hidden max-w-0">
         <div className="flex items-center gap-1 min-w-0">
           <input
             type="text"
@@ -391,14 +391,14 @@ const VariableTableRow = ({
           {variable.isPrivate && (
             <button
               onClick={() => setRevealed(!revealed)}
-              className="p-0.5 rounded hover:bg-active opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+              className="p-0.5 rounded hover:bg-active opacity-60 hover:opacity-100 transition-opacity flex-shrink-0"
             >
               {revealed ? <EyeOff size={13} className="text-comment" /> : <Eye size={13} className="text-comment" />}
             </button>
           )}
           <button
             onClick={handleCopy}
-            className="p-0.5 rounded hover:bg-active opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+            className="p-0.5 rounded hover:bg-active opacity-60 hover:opacity-100 transition-opacity flex-shrink-0"
           >
             {copied ? <Check size={13} style={{ color: "var(--icon-success)" }} /> : <Copy size={13} className="text-comment" />}
           </button>
@@ -416,7 +416,7 @@ const VariableTableRow = ({
       <td className="pr-3 py-1.5 w-8">
         <button
           onClick={() => setConfirmDelete(true)}
-          className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-active transition-opacity"
+          className="p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-active transition-opacity"
         >
           <Trash2 size={13} style={{ color: "var(--icon-error)" }} />
         </button>
@@ -648,7 +648,7 @@ const VariablesPanel = ({
       {/* Table */}
       <div className="flex-1 overflow-y-auto">
         {filteredVars.length > 0 || inheritedVars.length > 0 ? (
-          <table className="w-full border-collapse">
+          <table className="w-full border-collapse table-fixed">
             <thead>
               <tr className="border-b border-border">
                 <th className="pl-2 w-7">
@@ -659,10 +659,10 @@ const VariablesPanel = ({
                     className="w-3.5 h-3.5 rounded cursor-pointer accent-[var(--color-accent)]"
                   />
                 </th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-comment uppercase tracking-wider">Key</th>
+                <th className="px-2 py-2 w-[160px] text-left text-xs font-semibold text-comment uppercase tracking-wider">Key</th>
                 <th className="px-2 py-2 text-left text-xs font-semibold text-comment uppercase tracking-wider">Value</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-comment uppercase tracking-wider">Visibility</th>
-                <th className="pr-3 py-2"></th>
+                <th className="px-2 py-2 w-[100px] text-left text-xs font-semibold text-comment uppercase tracking-wider">Visibility</th>
+                <th className="pr-3 py-2 w-8"></th>
               </tr>
             </thead>
             <tbody>
@@ -801,16 +801,16 @@ const RuntimePanel = ({
       )}
       <div className="flex-1 overflow-y-auto">
         {entries.length > 0 ? (
-          <table className="w-full border-collapse">
+          <table className="w-full border-collapse table-fixed">
             <thead>
               <tr className="border-b border-border">
                 <th className="pl-2 w-7">
                   <input type="checkbox" checked={allSelected} onChange={toggleAll}
                     className="w-3.5 h-3.5 rounded cursor-pointer accent-[var(--color-accent)]" />
                 </th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-comment uppercase tracking-wider">Key</th>
+                <th className="px-2 py-2 w-[160px] text-left text-xs font-semibold text-comment uppercase tracking-wider">Key</th>
                 <th className="px-2 py-2 text-left text-xs font-semibold text-comment uppercase tracking-wider">Value</th>
-                <th className="pr-3 py-2"></th>
+                <th className="pr-3 py-2 w-10"></th>
               </tr>
             </thead>
             <tbody>
@@ -861,16 +861,16 @@ const RuntimeRow = ({
         <input type="checkbox" checked={isSelected} onChange={onToggleSelect}
           className={cn("w-3.5 h-3.5 rounded cursor-pointer accent-[var(--color-accent)]", isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100")} />
       </td>
-      <td className="px-2 py-2 w-[200px] font-mono text-sm text-text">{varKey}</td>
-      <td className="px-2 py-2">
-        <span className="font-mono text-sm text-comment flex-1 truncate max-w-xs">{displayValue}</span>
+      <td className="px-2 py-2 w-[200px] font-mono text-sm text-text overflow-hidden truncate">{varKey}</td>
+      <td className="px-2 py-2 overflow-hidden max-w-0">
+        <span className="font-mono text-sm text-comment block truncate w-full">{displayValue}</span>
       </td>
-      <td className="pr-3 py-1.5 w-8">
-        <div className="flex items-center gap-1">
-          <button onClick={handleCopy} className="p-0.5 rounded hover:bg-active opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+      <td className="pr-3 py-1.5 w-10">
+        <div className="flex items-center gap-1 justify-end">
+          <button onClick={handleCopy} className="p-0.5 rounded hover:bg-active opacity-60 hover:opacity-100 transition-opacity flex-shrink-0">
             {copied ? <Check size={13} style={{ color: "var(--icon-success)" }} /> : <Copy size={13} className="text-comment" />}
           </button>
-          <button onClick={() => setConfirmDelete(true)} className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-active transition-opacity">
+          <button onClick={() => setConfirmDelete(true)} className="p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-active transition-opacity flex-shrink-0">
             <Trash2 size={13} style={{ color: "var(--icon-error)" }} />
           </button>
         </div>
@@ -1274,9 +1274,11 @@ export const EnvironmentEditor = ({ tabId }: { tabId: string }) => {
 
   // Delete a single runtime variable from the selected env bucket
   const handleDeleteRuntimeVar = async (key: string) => {
-    const updated = { ...runtimeVars };
-    delete updated[key];
-    setRuntimeVars(updated);
+    setRuntimeVars((prev) => {
+      const updated = { ...prev };
+      delete updated[key];
+      return updated;
+    });
     const envKey = selectedEnvPath || "__global__";
     await (window as any).electron?.variables?.deleteKey?.(key, envKey);
   };

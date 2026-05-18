@@ -321,7 +321,10 @@ export default function createOAuth2MainPlugin(ctx: ElectronExtensionContext): E
                 authUrlObj.searchParams.set("code_challenge_method", codeChallengeMethod || "S256");
               }
 
-              ctx.shell.openExternal(authUrlObj.toString()).catch(() => {});
+              ctx.shell.openExternal(authUrlObj.toString()).catch((err: any) => {
+                shutdownServer();
+                reject(new Error(`OAuth2: failed to open browser window — ${err?.message || err}`));
+              });
 
               const timeout = setTimeout(() => {
                 shutdownServer("OAuth2 flow timed out (120s)");
@@ -505,7 +508,10 @@ export default function createOAuth2MainPlugin(ctx: ElectronExtensionContext): E
               if (scope) authUrlObj.searchParams.set("scope", scope);
               if (state) authUrlObj.searchParams.set("state", state);
 
-              ctx.shell.openExternal(authUrlObj.toString()).catch(() => {});
+              ctx.shell.openExternal(authUrlObj.toString()).catch((err: any) => {
+                shutdownServer();
+                reject(new Error(`OAuth2: failed to open browser window — ${err?.message || err}`));
+              });
 
               const timeout = setTimeout(() => {
                 shutdownServer("OAuth2 implicit flow timed out (120s)");

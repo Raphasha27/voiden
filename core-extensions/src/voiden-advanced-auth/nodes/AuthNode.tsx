@@ -48,7 +48,7 @@ const EXT_IPC = 'ext:voiden-advanced-auth:';
 const ipc = (ch: string, ...args: any[]) => (window as any).electron?.ipc?.invoke(`${EXT_IPC}${ch}`, ...args);
 
 // Factory function to create AuthNode with context components
-export const createAuthNode = (NodeViewWrapper: any, RequestBlockHeader: any, openFile?: (relativePath: string) => Promise<void>) => {
+export const createAuthNode = (NodeViewWrapper: any, RequestBlockHeader: any, openFile?: (relativePath: string) => Promise<void>, showToast?: (message: string, type?: 'info' | 'success' | 'warning' | 'error') => void) => {
   const AuthTypeSelector = ({ authType, isEditable, onChange }: { authType: AuthType; isEditable: boolean; onChange: (authType: AuthType) => void }) => {
     return (
       <select
@@ -301,11 +301,7 @@ export const createAuthNode = (NodeViewWrapper: any, RequestBlockHeader: any, op
               customParams: oauth2Config.customParams || "",
             });
           }
-          const existing = await (window as any).electron?.variables?.read();
-          const merged = { ...(existing || {}), ...vars };
-          await (window as any).electron?.variables?.writeVariables(
-            JSON.stringify(merged, null, 2),
-          );
+          await (window as any).electron?.variables?.mergeVariables(vars);
         } catch (err) {
           console.error("Failed to save OAuth2 tokens to runtime variables:", err);
         }
@@ -405,12 +401,15 @@ export const createAuthNode = (NodeViewWrapper: any, RequestBlockHeader: any, op
         setToken(result);
         await saveTokenToVariables(result);
       } catch (err: any) {
-        setError(err.message || "Failed to obtain token");
+        const raw = err?.message || "Failed to obtain token";
+        const msg = raw.replace(/^Error invoking remote method '[^']*':\s*/i, '');
+        setError(msg);
+        showToast?.(`OAuth2: ${msg}`, 'error');
       } finally {
         tokenFlowInFlightRef.current = false;
         setLoading(false);
       }
-    }, [oauth2Config, getTableValues, saveTokenToVariables]);
+    }, [oauth2Config, getTableValues, saveTokenToVariables, showToast]);
 
     const handleCancel = useCallback(async () => {
       try {
