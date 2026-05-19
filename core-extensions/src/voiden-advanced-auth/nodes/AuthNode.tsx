@@ -211,11 +211,10 @@ export const createAuthNode = (NodeViewWrapper: any, RequestBlockHeader: any, op
       const tableValues = getTableValues();
       const issuerUrl = tableValues.auth_url || "";
       if (!issuerUrl) {
-        setError("Enter an issuer URL in auth_url first");
+        showToast?.("Enter an issuer URL in auth_url first", 'error');
         return;
       }
       setDiscovering(true);
-      setError(null);
       try {
         const config = await ipc('oauth2:discover', { issuerUrl });
 
@@ -239,7 +238,8 @@ export const createAuthNode = (NodeViewWrapper: any, RequestBlockHeader: any, op
         const filledRows = expectedRows.map(([key, def]) => [key, currentValues[key] || def]);
         rebuildTable(filledRows);
       } catch (err: any) {
-        setError(err.message || "Discovery failed");
+        const msg = (err.message || "Discovery failed").replace(/^Error invoking remote method '[^']*':\s*/i, '');
+        showToast?.(`OAuth2: ${msg}`, 'error');
       } finally {
         setDiscovering(false);
       }
