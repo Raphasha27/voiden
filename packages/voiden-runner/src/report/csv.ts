@@ -1,5 +1,5 @@
-import { writeFileSync, statSync, existsSync } from 'fs'
-import { join, resolve } from 'path'
+import { writeFileSync, statSync, existsSync, mkdirSync } from 'fs'
+import { join, resolve, dirname } from 'path'
 import type { RunResult, CliReportEntry } from '../types.js'
 
 function resolveOutputPath(input: string): string {
@@ -75,6 +75,7 @@ export function exportToCsv(
     ].map(cell).join(','))
   }
 
+  mkdirSync(dirname(outputPath), { recursive: true })
   writeFileSync(outputPath, rows.join('\n') + '\n', 'utf-8')
   return outputPath
 }

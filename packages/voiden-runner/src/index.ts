@@ -597,6 +597,7 @@ program
         },
         requests: allResults.map(r => ({ file: r.file, ...r.result })),
       }
+      mkdirSync(dirname(opts.outputJson), { recursive: true })
       writeFileSync(opts.outputJson, JSON.stringify(jsonData, null, 2) + '\n', 'utf-8')
       if (!opts.json) console.log(chalk.gray(`  ↳ Results written to ${opts.outputJson}`))
     }

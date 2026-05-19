@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { STORE_DIR } from './plugins/store.js'
 import type { RunResult } from './types.js'
@@ -21,6 +21,7 @@ export function loadSessionResults(): SessionResult[] {
 }
 
 export function saveSessionResults(results: SessionResult[]): void {
+  mkdirSync(STORE_DIR, { recursive: true })
   writeFileSync(RESULTS_PATH, JSON.stringify(results, null, 2), 'utf-8')
 }
 
