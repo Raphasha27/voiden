@@ -27,12 +27,15 @@ export default function createAdvancedAuthPlugin(context: PluginContext) {
   return {
     onload: async () => {
 
+      const showToast: (message: string, type?: 'info' | 'success' | 'warning' | 'error') => void =
+        (context.ui as any).showToast?.bind(context.ui) ?? (() => {});
+
       // Load AuthNode from plugin package
       const { createAuthNode } = await import('./nodes/AuthNode');
 
       // Create node with context components
       const { NodeViewWrapper, RequestBlockHeader } = context.ui.components;
-      const AuthNode = createAuthNode(NodeViewWrapper, RequestBlockHeader, context.project.openFile, context.ui.showToast.bind(context.ui));
+      const AuthNode = createAuthNode(NodeViewWrapper, RequestBlockHeader, context.project.openFile, showToast);
 
       // Register AuthNode
       context.registerVoidenExtension(AuthNode);
@@ -45,7 +48,6 @@ export default function createAdvancedAuthPlugin(context: PluginContext) {
       try {
         // @ts-ignore - Vite resolves @/ alias at serve time
         const { hookRegistry } = await import(/* @vite-ignore */ '@/core/request-engine/pipeline');
-        const showToast = context.ui.showToast.bind(context.ui);
         hookRegistry.registerHook(
           'voiden-advanced-auth',
           'request-compilation' as any,
@@ -312,7 +314,7 @@ export default function createAdvancedAuthPlugin(context: PluginContext) {
       try {
         // @ts-ignore
         const { hookRegistry: hookRegistry401 } = await import(/* @vite-ignore */ '@/core/request-engine/pipeline');
-        const showToast401 = context.ui.showToast.bind(context.ui);
+        const showToast401 = showToast;
         hookRegistry401.registerHook(
           'voiden-advanced-auth',
           'post-processing' as any,
