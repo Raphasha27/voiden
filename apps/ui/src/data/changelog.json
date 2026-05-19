@@ -1,7 +1,7 @@
 [
   {
     "version": "v1.6.3",
-    "date": "18/05/2026",
+    "date": "19/05/2026",
     "title": "gRPC Reliability, OAuth2 & Runtime Variable Fixes",
     "description": "Patch release fixing response header lookups in runtime variables, gRPC connection error surfacing, protocol detection for imported gRPC files, native proto file selection via Electron dialog, theme-aware borders across gRPC and WebSocket UI components, OAuth2 error toasts, and bulk delete of runtime variables.",
     "icon": "Wrench",
