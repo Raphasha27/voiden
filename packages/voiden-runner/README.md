@@ -15,7 +15,6 @@ GitHub Actions, GitLab CI, Docker, and more.
 - [Quick start](#quick-start)
 - [Commands](#commands)
   - [run](#run)
-  - [env](#env)
   - [session](#session)
   - [report](#report)
   - [plugin](#plugin)
@@ -29,7 +28,7 @@ GitHub Actions, GitLab CI, Docker, and more.
   - [voiden-advanced-auth](#voiden-advanced-auth)
   - [voiden-graphql](#voiden-graphql)
 - [Output formats](#output-formats)
-- [Reports — CSV and email](#reports--csv-and-email)
+- [Reports — CSV, JSON, and email](#reports--csv-json-and-email)
 - [Exit codes](#exit-codes)
 - [CI/CD](#cicd)
 - [Supported protocols](#supported-protocols)
@@ -61,11 +60,16 @@ voiden-runner run ./requests/ --env .env.staging
 # Stop on first failure (CI-friendly)
 voiden-runner run ./tests/ --env .env.ci --stop-on-failure
 
-# Export report to CSV + send by email
-# SMTP settings (host, user, etc.) are read from your .env file
+# Send an email report (no attachment required — HTML includes all details)
+voiden-runner run ./tests/ \
+  --env .env.staging \
+  --mail-to team@company.com
+
+# Send with both CSV and JSON attached
 voiden-runner run ./tests/ \
   --env .env.staging \
   --csv ./results/report.csv \
+  --output-json ./results/report.json \
   --mail-to team@company.com
 ```
 
@@ -93,12 +97,12 @@ voiden-runner run <paths...> [options]
 | `--show-req` | Print sent request headers and body for each request |
 | `--show-res` | Print response headers and body for each request |
 | `--verbose` | Print script logs, plugin messages, and section dividers |
-| `--json` | Machine-readable JSON output (suppresses normal output) |
-| `--no-session` | Completely stateless run (do not load/save results or runtime variables) |
-| `--output-json <file>` | Write the full result object to a JSON file — pass the whole response data to the next CLI or script |
+| `--json` | Output results as JSON to stdout instead of the normal colored output — useful for piping to other tools in CI |
+| `--no-session` | Completely stateless run — no variables are loaded from disk, shared between files, or saved |
+| `--output-json <file>` | Write the full result object to a JSON file (also attached to email if `--mail` is used) |
 | `--csv <path>` | Export full report to a CSV file. Use `.` for the current directory (auto-generates filename) |
-| `--mail` | Send HTML summary + attached CSV using `VOIDEN_MAIL_TO` (requires `--csv`) |
-| `--mail-to <address>` | Send HTML summary + attached CSV to this address (requires `--csv`) |
+| `--mail` | Send HTML report to the address in `VOIDEN_MAIL_TO` env |
+| `--mail-to <address>` | Send HTML report to this email address |
 | `--mail-from <address>` | Sender address (default: `VOIDEN_MAIL_FROM` env) |
 | `--mail-subject <text>` | Email subject (default: `VOIDEN_MAIL_SUBJECT` env or auto-summary) |
 | `--smtp-host <host>` | SMTP server host (default: `VOIDEN_SMTP_HOST` env) |
@@ -107,7 +111,7 @@ voiden-runner run <paths...> [options]
 | `--smtp-user <user>` | SMTP username (default: `VOIDEN_SMTP_USER` env) |
 | `--smtp-pass <pass>` | SMTP password (default: `VOIDEN_SMTP_PASS` env) |
 
-### Environment Variables
+### `session`
 
 ```
 voiden-runner session status
@@ -122,15 +126,26 @@ state (results and runtime variables).
 ### `report`
 
 ```
-voiden-runner report generate [--csv <path>] [--mail] [--mail-to <address>]
+voiden-runner report generate [options]
 voiden-runner report clear
 ```
 
-`generate` (alias `gen`) creates a combined report from all accumulated results 
-in the current session. `clear` wipes the results history only (runtime 
+`generate` (alias `gen`) creates a combined report from all accumulated results
+in the current session. `clear` wipes the results history only (runtime
 variables are preserved).
 
-Accepts all mail and SMTP options listed above.
+**`report generate` options**
+
+| Flag | Description |
+|---|---|
+| `-e, --env <path>` | `.env` file for SMTP configuration |
+| `--csv <path>` | Export session results to a CSV file |
+| `--output-json <file>` | Write session results to a JSON file (also attached to email if `--mail` is used) |
+| `--mail` | Send HTML report to `VOIDEN_MAIL_TO` (attaches `--csv` and/or `--output-json` if provided) |
+| `--mail-to <address>` | Send HTML report to this address |
+| `--mail-from <address>` | Sender address |
+| `--mail-subject <text>` | Email subject line |
+| `--smtp-*` | All SMTP flags listed above |
 
 ### `plugin`
 
@@ -270,8 +285,8 @@ voiden.variables.set('token', voiden.response.body.access_token)
 By default, runtime variables are **persisted to disk** at `~/.voiden/.process.env.json`.
 This allows you to share state across multiple `voiden-runner` commands.
 
-- **To disable persistence** (keep variables in-memory only for a single run), use the `--no-session` flag.
-- **To clear variables**, delete the `.process.env.json` file or use `voiden-runner session clear`.
+- **To run completely stateless**, use the `--no-session` flag — no variables are loaded from disk, no variables flow between files, and nothing is saved after the run.
+- **To clear variables**, use `voiden-runner session clear`.
 
 The `.void` files themselves are never modified. This ensures that your source
 files remain clean while still allowing for stateful execution chains.
@@ -306,11 +321,11 @@ in `get-profile.void`.
 ## Sessions & Persistence
 
 By default, `voiden-runner` operates in a **stateful session**. This means it
-persists captured runtime variables and run results across multiple command 
+persists captured runtime variables and run results across multiple command
 invocations until you explicitly clear them.
 
 ### 1. Persistent State
-Captured variables stay active until you clear the session. This is ideal for 
+Captured variables stay active until you clear the session. This is ideal for
 multi-step workflows:
 
 ```bash
@@ -329,19 +344,36 @@ voiden-runner run users.void
 voiden-runner run posts.void
 
 # Generate a combined CSV report for all 3 runs
-voiden-runner report --csv ./session-report.csv
+voiden-runner report generate --csv ./session-report.csv
 
 # Email the combined report
-voiden-runner report --mail-to qa@company.com
+voiden-runner report generate --mail-to qa@company.com
+
+# Email with both CSV and JSON attached
+voiden-runner report generate \
+  --csv ./session-report.csv \
+  --output-json ./session-report.json \
+  --mail-to qa@company.com
+```
+
+### 3. Stateless runs
+
+Use `--no-session` to run completely isolated — no state is loaded from disk,
+no variables flow between files within the run, and nothing is saved after:
+
+```bash
+# Each file is fully isolated — no vars from disk, no cross-file var sharing
+voiden-runner run ./tests/ --no-session
 ```
 
 ### Managing the Session
 
-Use the `session` command to check status or wipe all state.
-
 ```bash
 # See how many variables and results are stored
 voiden-runner session status
+
+# List all persisted runtime variables and their values
+voiden-runner session vars
 
 # Wipe everything (results and runtime variables)
 voiden-runner session clear
@@ -497,6 +529,9 @@ POST (`Content-Type: application/json`, body `{query, variables}`).
 
 ### `--json`
 
+Outputs results as JSON to stdout instead of the normal colored output. The terminal
+output is completely replaced by the JSON — useful for piping directly to another tool.
+
 ```json
 {
   "summary": { "total": 3, "passed": 2, "failed": 1, "totalDurationMs": 559, "activePlugins": ["..."] },
@@ -515,9 +550,35 @@ POST (`Content-Type: application/json`, body `{query, variables}`).
 }
 ```
 
+### `--output-json <file>`
+
+Writes the same JSON structure to a file. Unlike `--json`, normal terminal output
+is preserved. If `--mail` is also used, the JSON file is attached to the email.
+
+```bash
+# Save results to file — terminal output still shows normally
+voiden-runner run auth.void --output-json result.json
+
+# Combine: normal output + JSON file + email with JSON attached
+voiden-runner run ./tests/ \
+  --output-json results.json \
+  --mail-to qa@company.com
+```
+
+### `--json` vs `--output-json`
+
+| | `--json` | `--output-json <file>` |
+|---|---|---|
+| Output destination | stdout | file on disk |
+| Terminal output | replaced by JSON | preserved (normal colored output) |
+| Email attachment | — | yes, if `--mail` is also used |
+| Use case | piping to other tools | saving to disk / attaching to email |
+
+Both flags can be combined — the JSON goes to stdout AND to a file simultaneously.
+
 ---
 
-## Reports — CSV and email
+## Reports — CSV, JSON, and email
 
 ### CSV
 
@@ -537,27 +598,50 @@ CSV columns: `File`, `Protocol`, `Method`, `URL`, `Success`, `Status`,
 ### Email
 
 ```bash
+# Send HTML report (no attachment required)
 voiden-runner run ./tests/ \
   --env .env.ci \
   --mail-to qa@company.com
+
+# Attach a CSV
+voiden-runner run ./tests/ \
+  --env .env.ci \
+  --csv ./report.csv \
+  --mail-to qa@company.com
+
+# Attach both CSV and JSON
+voiden-runner run ./tests/ \
+  --env .env.ci \
+  --csv ./report.csv \
+  --output-json ./report.json \
+  --mail-to qa@company.com
 ```
 
-Sends a dark-themed HTML report with per-request cards showing request/response
-headers, bodies, and assertion results. Subject line is auto-generated from the
-pass/fail summary unless `--mail-subject` is provided.
+The HTML email is styled using the Voiden dark theme and includes:
+
+- **Summary stats** — passed, failed, total, and total duration at a glance
+- **Failed section** — all failed requests listed first, each with a red indicator
+- **Passed section** — all passed requests listed after
+- **Per-request cards** — each card shows method, URL, status code, and duration
+- **▸ Request & Response dropdown** — expand any card to see the full request headers/body and response headers/body
+- **Assertion results** — pass/fail per assertion shown inline on each card
+- **Attachments** — CSV and/or JSON attached when `--csv` or `--output-json` is provided
 
 **SMTP Configuration**
 
-The runner reads SMTP settings from your `.env` file (passed via `--env`) or
+SMTP and mail settings are read from your `.env` file (passed via `--env`) or
 the system environment.
 
 | Variable | Description |
 |---|---|
-| `VOIDEN_SMTP_HOST` | **Required** for email. SMTP server hostname (e.g., `smtp.gmail.com`). |
-| `VOIDEN_SMTP_PORT` | SMTP port. Defaults to `587` (or `465` if secure). |
-| `VOIDEN_SMTP_SECURE` | Set to `true` to use TLS/SSL (port 465). |
-| `VOIDEN_SMTP_USER` | SMTP login username. |
-| `VOIDEN_SMTP_PASS` | SMTP login password. |
+| `VOIDEN_MAIL_TO` | Default recipient address (used when `--mail` is passed without `--mail-to`) |
+| `VOIDEN_MAIL_FROM` | Default sender address |
+| `VOIDEN_MAIL_SUBJECT` | Default email subject |
+| `VOIDEN_SMTP_HOST` | **Required** for email. SMTP server hostname (e.g. `smtp.gmail.com`) |
+| `VOIDEN_SMTP_PORT` | SMTP port. Defaults to `587` (or `465` if secure) |
+| `VOIDEN_SMTP_SECURE` | Set to `true` to use TLS/SSL (port 465) |
+| `VOIDEN_SMTP_USER` | SMTP login username |
+| `VOIDEN_SMTP_PASS` | SMTP login password |
 
 ---
 
@@ -579,68 +663,6 @@ When exiting with code `1` due to failures, a final message is printed:
 This exit code works universally — bash (`$?`), PowerShell (`$LASTEXITCODE`),
 `set -e`, `&&`/`||` chains, GitHub Actions, GitLab CI, Jenkins, CircleCI, and
 any other CI/CD system.
-
-## Passing results to other CLI commands
-
-### `--output-json <file>`
-
-Writes the full result — the whole response object and array — to a JSON file.
-Normal terminal output still shows. The next CLI, script, or tool reads the file
-and gets everything: status, headers, body, assertions, duration.
-
-```bash
-# Write results to a file, then pass the whole object to the next tool
-voiden-runner run auth.void --output-json result.json
-my-deploy-cli --data result.json
-
-# Chain multiple runs — each appends its own file
-voiden-runner run login.void  --output-json login.json
-voiden-runner run users.void  --output-json users.json
-my-report-tool login.json users.json
-```
-
-The JSON structure written to the file is the same as `--json` stdout output:
-
-```json
-{
-  "summary": { "total": 1, "passed": 1, "failed": 0, "totalDurationMs": 342 },
-  "requests": [
-    {
-      "file": "/path/to/auth.void",
-      "protocol": "rest",
-      "method": "POST",
-      "url": "https://api.example.com/auth",
-      "success": true,
-      "status": 200,
-      "durationMs": 342,
-      "body": "{\"access_token\":\"sk-abc\",\"user\":{\"id\":42}}",
-      "requestHeaders": { "Content-Type": "application/json" },
-      "responseHeaders": { "content-type": "application/json" }
-    }
-  ]
-}
-```
-
-### `--json` stdout pipe
-
-Use `--json` to pipe the same structure directly to another command:
-
-```bash
-voiden-runner run auth.void --json | jq .
-voiden-runner run tests/ --json | my-cli --stdin
-voiden-runner run tests/ --json > results.json && python3 analyse.py results.json
-```
-
-### Runtime variable chaining
-
-Variables captured via `{{$res.body.xxx}}` blocks persist to
-`~/.voiden/.process.env.json` between separate `voiden-runner run` calls —
-no piping or files needed:
-
-```bash
-voiden-runner run login.void      # captures token via runtime-variables block
-voiden-runner run users.void      # uses {{process.token}} automatically
-```
 
 ---
 
@@ -692,7 +714,7 @@ jobs:
           voiden-runner run ./tests/ \
             --env .env.ci \
             --stop-on-failure \
-            --json | tee results.json
+            --output-json results.json
 
       - uses: actions/upload-artifact@v4
         if: always()

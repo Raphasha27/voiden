@@ -370,7 +370,7 @@ program
   .option('--fail-on-error', 'Exit with code 1 if any request fails (runs all files first)')
   .option('--verbose', 'Print plugin and script logs')
   .option('--json', 'Output results as JSON (suppresses normal output — useful for CI pipelines)')
-  .option('--no-session', 'Completely stateless run (do not load/save results or runtime variables)')
+  .option('--no-session', 'Completely stateless run — no variables are loaded from disk, shared between files, or saved')
   .option('--output-json <file>', 'Write the full result object to a JSON file — pass to the next CLI, script, or tool')
   .option('--csv <path>', 'Export full report (request + response headers, bodies, assertions) to a CSV file')
   .option('--mail', 'Send HTML report to address specified in VOIDEN_MAIL_TO env')
@@ -454,10 +454,6 @@ program
         console.error(chalk.red('  ✗  Mail error: no recipient found. Please provide --mail-to or set VOIDEN_MAIL_TO.'))
         process.exit(1)
       }
-      if (!opts.csv) {
-        console.error(chalk.red('  ✗  Mail error: no CSV generated. Mail requires --csv flag.'))
-        process.exit(1)
-      }
       if (!smtpHost) {
         console.error(chalk.red('  ✗  Mail keys are missing. Please provide SMTP configuration (VOIDEN_SMTP_HOST).'))
         process.exit(1)
@@ -475,7 +471,7 @@ program
 
     // Load persisted runtime variables if not disabled
     const VARS_PATH = join(STORE_DIR, '.process.env.json')
-    if (!opts.noSession && existsSync(VARS_PATH)) {
+    if (opts.session && existsSync(VARS_PATH)) {
       try {
         const data = JSON.parse(readFileSync(VARS_PATH, 'utf-8'))
         Object.assign(runtimeVars, data)
@@ -494,7 +490,10 @@ program
       const stopSpinner = opts.json ? () => {} : startSpinner(`[${i + 1}/${resolvedFiles.length}]  ${basename(file)}`)
 
       try {
-        const { results } = await runVoidFile(file, { env, verbose: opts.verbose, runtimeVars, activePlugins })
+        // --no-session: each file is fully isolated — no vars flow from one file to another.
+        // Session mode: all files share runtimeVars so captured vars chain across files.
+        const fileVars = opts.session ? runtimeVars : {}
+        const { results } = await runVoidFile(file, { env, verbose: opts.verbose, runtimeVars: fileVars, activePlugins })
         stopSpinner()
         for (const { result } of results) {
           if (!result.success) anyFailed = true
@@ -525,14 +524,14 @@ program
     }
 
     // Save session results if not disabled
-    if (!opts.noSession) {
+    if (opts.session) {
       appendSessionResults(allResults)
     }
 
     const totalMs = Date.now() - runStart
 
     // Save runtime variables if not disabled
-    if (!opts.noSession && Object.keys(runtimeVars).length > 0) {
+    if (opts.session && Object.keys(runtimeVars).length > 0) {
       try {
         mkdirSync(STORE_DIR, { recursive: true })
         writeFileSync(VARS_PATH, JSON.stringify(runtimeVars, null, 2), 'utf-8')
@@ -564,6 +563,29 @@ program
       }
     }
 
+    // ── Output JSON to file (before mail so it can be attached) ──────────────
+    let savedJsonPath: string | undefined
+    if (opts.outputJson) {
+      const jsonData = {
+        summary: {
+          total: allResults.length,
+          passed: allResults.filter(r => r.result.success).length,
+          failed: allResults.filter(r => !r.result.success).length,
+          totalDurationMs: totalMs,
+          activePlugins,
+        },
+        requests: allResults.map(r => ({ file: r.file, ...r.result })),
+      }
+      try {
+        mkdirSync(dirname(opts.outputJson), { recursive: true })
+        writeFileSync(opts.outputJson, JSON.stringify(jsonData, null, 2) + '\n', 'utf-8')
+        savedJsonPath = opts.outputJson
+        if (!opts.json) console.log(chalk.gray(`  ↳ Results written to ${opts.outputJson}`))
+      } catch (err: any) {
+        console.error(chalk.red(`  ✗  Failed to write JSON: ${err?.message ?? String(err)}`))
+      }
+    }
+
     // ── Email report ──────────────────────────────────────────────────────────
     if (mailTo) {
       console.log(chalk.gray(`  ↑  Sending report to ${mailTo} …`))
@@ -578,28 +600,12 @@ program
           smtpUser:    smtpUser,
           smtpPass:    smtpPass,
           csvPath:     savedCsvPath,
+          jsonPath:    savedJsonPath,
         })
         console.log(chalk.green(`  ✓  Report sent to ${mailTo}`))
       } catch (err: any) {
         console.error(chalk.red(`  ✗  Failed to send email: ${err?.message ?? String(err)}`))
       }
-    }
-
-    // ── Output JSON to file ───────────────────────────────────────────────────
-    if (opts.outputJson) {
-      const jsonData = {
-        summary: {
-          total: allResults.length,
-          passed: allResults.filter(r => r.result.success).length,
-          failed: allResults.filter(r => !r.result.success).length,
-          totalDurationMs: Date.now() - runStart,
-          activePlugins,
-        },
-        requests: allResults.map(r => ({ file: r.file, ...r.result })),
-      }
-      mkdirSync(dirname(opts.outputJson), { recursive: true })
-      writeFileSync(opts.outputJson, JSON.stringify(jsonData, null, 2) + '\n', 'utf-8')
-      if (!opts.json) console.log(chalk.gray(`  ↳ Results written to ${opts.outputJson}`))
     }
 
     const shouldFail = (opts.failOnError || stopOnFailure) && anyFailed
@@ -720,8 +726,9 @@ reportCmd
   .alias('gen')
   .option('-e, --env <path>', 'Path to .env or .yaml file for SMTP configuration')
   .option('--csv <path>', 'Export session results to a CSV file')
-  .option('--mail', 'Send HTML summary + attached CSV using VOIDEN_MAIL_TO env (requires --csv)')
-  .option('--mail-to <address>', 'Send HTML summary + attached CSV to this email address (requires --csv)')
+  .option('--output-json <file>', 'Write full result object to a JSON file (also attached to email if --mail is used)')
+  .option('--mail', 'Send HTML report to VOIDEN_MAIL_TO (attaches --csv and/or --output-json if provided)')
+  .option('--mail-to <address>', 'Send HTML report to this email address (attaches --csv and/or --output-json if provided)')
   .option('--mail-from <address>', 'Sender address for the report email')
   .option('--mail-subject <subject>', 'Email subject line')
   .option('--smtp-host <host>', 'SMTP server host')
@@ -756,10 +763,6 @@ reportCmd
         console.error(chalk.red('  ✗  Mail error: no recipient found. Please provide --mail-to or set VOIDEN_MAIL_TO.'))
         process.exit(1)
       }
-      if (!opts.csv) {
-        console.error(chalk.red('  ✗  Mail error: no CSV generated. Mail requires --csv flag.'))
-        process.exit(1)
-      }
       const smtpHost = opts.smtpHost || env.VOIDEN_SMTP_HOST
       if (!smtpHost) {
         console.error(chalk.red('  ✗  Mail keys are missing. Please provide SMTP configuration (VOIDEN_SMTP_HOST).'))
@@ -767,8 +770,8 @@ reportCmd
       }
     }
 
-    if (!opts.csv && !mailTo) {
-      console.log(chalk.gray(`  Session has ${results.length} accumulated results. Specify --csv to generate a report.`))
+    if (!opts.csv && !opts.outputJson && !mailTo) {
+      console.log(chalk.gray(`  Session has ${results.length} accumulated results. Specify --csv or --output-json to generate a report.`))
       return
     }
 
@@ -779,6 +782,26 @@ reportCmd
         console.log(chalk.green(`  ✓  CSV report saved to ${savedCsvPath}`))
       } catch (err: any) {
         console.error(chalk.red(`  ✗  Failed to write CSV: ${err?.message ?? String(err)}`))
+      }
+    }
+
+    let savedJsonPath: string | undefined
+    if (opts.outputJson) {
+      const jsonData = {
+        summary: {
+          total: results.length,
+          passed: results.filter(r => r.result.success).length,
+          failed: results.filter(r => !r.result.success).length,
+        },
+        requests: results.map(r => ({ file: r.file, ...r.result })),
+      }
+      try {
+        mkdirSync(dirname(opts.outputJson), { recursive: true })
+        writeFileSync(opts.outputJson, JSON.stringify(jsonData, null, 2) + '\n', 'utf-8')
+        savedJsonPath = opts.outputJson
+        console.log(chalk.gray(`  ↳ Results written to ${opts.outputJson}`))
+      } catch (err: any) {
+        console.error(chalk.red(`  ✗  Failed to write JSON: ${err?.message ?? String(err)}`))
       }
     }
 
@@ -808,6 +831,7 @@ reportCmd
           smtpUser:    smtpUser,
           smtpPass:    smtpPass,
           csvPath:     savedCsvPath,
+          jsonPath:    savedJsonPath,
         })
         console.log(chalk.green(`  ✓  Report sent to ${mailTo}`))
       } catch (err: any) {
