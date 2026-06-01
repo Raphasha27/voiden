@@ -122,6 +122,7 @@
     "react-hook-form": "7.51.5",
     "react-hotkeys-hook": "^4.4.1",
     "react-icons": "^4.11.0",
+    "react-markdown": "^10.1.0",
     "react-resizable-panels": "^2.0.12",
     "react-select": "^5.8.0",
     "recharts": "^2.14.1",
