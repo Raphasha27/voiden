@@ -66,6 +66,8 @@ import * as _CodeMirrorView from '@codemirror/view';
 import * as _CodeMirrorAutocomplete from '@codemirror/autocomplete';
 import * as _ReactDnd from 'react-dnd';
 import * as _ReactDndHtml5Backend from 'react-dnd-html5-backend';
+import * as _ReactMarkdown from 'react-markdown';
+import * as _RemarkGfm from 'remark-gfm';
 import { useActiveEnvironment, useEnvironments } from "@/core/environment/hooks";
 import { getResponsePanelPosition as getResponsePanelPositionFn } from "@/core/stores/responsePanelPosition";
 import { getTable, parseAuthNode, buildHeadersWithCookies, findNode, findNodes, createNewRequestObject, getRequest } from "@/core/request-engine/getRequestFromJson";
@@ -435,6 +437,9 @@ if (typeof window !== 'undefined') {
     // react-dnd / react-dnd-html5-backend — shared instances prevent duplicate HTML5 backend registration
     "react-dnd": _ReactDnd,
     "react-dnd-html5-backend": _ReactDndHtml5Backend,
+    // react-markdown + remark-gfm — shared so plugins don't bundle their own copies
+    "react-markdown": _ReactMarkdown,
+    "remark-gfm": _RemarkGfm,
     // @/main is a lazy getter — getQueryClient lives in main.tsx which imports
     // plugins.tsx, creating a circular dep. Accessing it eagerly here hits the
     // Temporal Dead Zone. The getter defers the read until a plugin uses the shim.
