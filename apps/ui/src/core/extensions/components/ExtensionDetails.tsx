@@ -393,6 +393,13 @@ export const ExtensionDetails = ({
 
     if (extensionData.type === "community") {
       if (!extensionData.installedPath) {
+        if (extensionData.incompatibleLatestVersion) {
+          return (
+            <button disabled className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-active/40 text-comment cursor-not-allowed border border-border">
+              Install
+            </button>
+          );
+        }
         return (
           <button onClick={() => installMutation.mutate(extensionData)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-button-primary hover:bg-button-primary-hover text-bg font-medium transition-colors shadow-sm">
             {installMutation.isPending ? <><Loader2 size={11} className="animate-spin" /> Installing...</> : "Install"}

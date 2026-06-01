@@ -15,9 +15,10 @@ import * as _TiptapSuggestion from "@tiptap/suggestion";
 import * as _LucideReact from "lucide-react";
 import * as _Tippy from "tippy.js";
 import * as _Yaml from "yaml";
-import { PluginErrorBoundary } from "@/core/components/ErrorBoundary";
+import { ErrorBoundary } from "@/core/components/ErrorBoundary";
+import { AlertCircle, Copy, Check } from "lucide-react";
 import { getProjects } from "@/core/projects/hooks";
-import { useGetExtensions } from "@/core/extensions/hooks";
+import { useGetExtensions, useSetExtensionEnabled, useUninstallExtension } from "@/core/extensions/hooks";
 import { getQueryClient } from "./main";
 import {
   Panel,
@@ -567,6 +568,7 @@ export const createPlugin = (
       exposedHelpers[extensionId] = helpers;
     },
     registerSidebarTab: (sidebarId: "left" | "right", tab: Tab) => {
+      if (tab.component) tab = { ...tab, component: tagComponent(extensionId, tab.component) };
       // Update your Zustand store immediately.
       usePluginStore.getState().addSidebarTab(sidebarId, tab);
       // Inform your electron backend.
@@ -614,6 +616,7 @@ export const createPlugin = (
       useEditorEnhancementStore.getState().removeCodemirrorExtension(extension);
     },
     registerPanel: (panelId: string, panel: Tab) => {
+      if (panel.component) panel = { ...panel, component: tagComponent(extensionId, panel.component) };
       usePluginStore.getState().registerPanel(panelId, panel);
     },
     addTab: async (tabId: string, tab: Panel) => {
@@ -622,7 +625,7 @@ export const createPlugin = (
         usePluginStore.getState().registerPanel(tabId, {
           id: tab.id,
           title: tab.title,
-          component: tab.component,
+          component: tagComponent(extensionId, tab.component),
         });
       }
       const addedTab = await window.electron?.tab.add(tabId, {
@@ -1035,7 +1038,7 @@ export const createPlugin = (
     },
     registerTopBarItem: (item: PluginTopBarItem) => {
       extensionLogger.info(`Plugin "${extensionId}" registering top bar item: ${item.id}`);
-      usePluginStore.getState().addTopBarItem(item);
+      usePluginStore.getState().addTopBarItem({ ...item, icon: tagComponent(extensionId, item.icon) });
     },
     registerContextMenu: (item: PluginContextMenuItem) => {
       requirePermission('contextMenus');
@@ -1653,7 +1656,181 @@ const PluginLoadingScreen = () => {
       </div>
     </div>
   );
-};export const PluginProvider = ({ children }: { children: React.ReactNode }) => {
+};
+
+// Wraps a plugin-registered component with a HOC whose displayName contains the extensionId.
+// Even if the wrapped value is invalid (object instead of component), the HOC itself is a
+// valid function, so React's component stack will show `VoidenPlugin_<extensionId>` on error.
+function tagComponent(extensionId: string, Component: any): React.ComponentType<any> {
+  const Tagged = (props: any) => {
+    const C = Component;
+    return <C {...props} />;
+  };
+  Tagged.displayName = `VoidenPlugin_${extensionId}`;
+  return Tagged;
+}
+
+function findBrokenExtensions(
+  error: Error | null,
+  errorInfo: import('react').ErrorInfo | null,
+  extensions: any[],
+  pluginErrors: { extensionId: string }[]
+): any[] {
+  if (!extensions?.length) return [];
+
+  // Load-time errors already have the extension ID tracked
+  const loadErrorIds = new Set(
+    pluginErrors.map((e) => e.extensionId).filter((id) => id !== '__plugin_system__')
+  );
+  if (loadErrorIds.size > 0) {
+    const matched = extensions.filter((ext) => loadErrorIds.has(ext.id));
+    if (matched.length > 0) return matched;
+  }
+
+  // Render-time errors: parse component stack for VoidenPlugin_ tags injected by tagComponent()
+  const componentStack = errorInfo?.componentStack ?? '';
+  const pluginMatch = componentStack.match(/VoidenPlugin_([^\s\n)]+)/);
+  if (pluginMatch) {
+    const matchedId = pluginMatch[1];
+    const ext = extensions.find((e) => e.id === matchedId);
+    if (ext) return [ext];
+  }
+
+  // Fallback: match error stack/message against extension IDs (works when bundle path contains the ID)
+  const stack = (error?.stack ?? '') + (error?.message ?? '');
+  const matched = extensions.filter((ext) => ext.id && stack.includes(ext.id));
+  return matched;
+}
+
+const PluginErrorFallback: React.FC<{
+  error: Error | null;
+  errorInfo: import('react').ErrorInfo | null;
+  onReset: () => void;
+}> = ({ error, errorInfo, onReset }) => {
+  const { data: extensions } = useGetExtensions();
+  const pluginErrors = usePluginStore((s) => s.pluginErrors);
+  const { mutate: setEnabled } = useSetExtensionEnabled();
+  const { mutate: uninstall } = useUninstallExtension();
+  const [copied, setCopied] = useState(false);
+
+  const allExtensions = (extensions ?? []) as any[];
+  const brokenExts = findBrokenExtensions(error, errorInfo, allExtensions, pluginErrors);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(error?.stack || error?.message || 'Unknown error');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="h-full w-full flex items-center justify-center p-4 bg-bg">
+      <div className="max-w-md w-full bg-editor border border-border rounded-lg p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <AlertCircle className="w-8 h-8 text-orange-500 flex-shrink-0" />
+          <div>
+            <h3 className="font-semibold text-text">Plugin Error</h3>
+            <p className="text-sm text-comment">A plugin caused an error</p>
+          </div>
+        </div>
+
+        {brokenExts.length > 0 && (
+          <div className="space-y-1">
+            {brokenExts.map((ext: any) => (
+              <div key={ext.id} className="flex items-center justify-between gap-2 p-2 bg-bg rounded border border-border">
+                <span className="text-sm font-medium text-text truncate flex-1">{ext.name || ext.id}</span>
+                <div className="flex gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => setEnabled({ extensionId: ext.id, enabled: false })}
+                    className="text-xs px-2 py-1 bg-editor border border-border text-comment hover:text-text rounded transition-colors"
+                  >
+                    Disable
+                  </button>
+                  <button
+                    onClick={() => uninstall(ext.id)}
+                    className="text-xs px-2 py-1 bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 rounded transition-colors"
+                  >
+                    Uninstall
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="text-sm text-red-400 font-mono bg-bg p-3 rounded border border-border break-words">
+          {error?.message || 'Unknown plugin error'}
+        </p>
+
+        <div className="flex gap-2">
+          <button
+            onClick={onReset}
+            className="flex-1 bg-accent text-bg px-3 py-2 rounded text-sm hover:bg-accent/90 transition-colors"
+          >
+            Try Again
+          </button>
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1 bg-editor border border-border text-text px-3 py-2 rounded text-sm hover:bg-active transition-colors"
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+            {copied ? 'Copied!' : 'Copy Error'}
+          </button>
+        </div>
+
+        {brokenExts.length === 0 && allExtensions.filter((e) => e.enabled).length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-comment font-medium">Disable or uninstall an extension to recover:</p>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {allExtensions.filter((e) => e.enabled).map((ext: any) => (
+                <div key={ext.id} className="flex items-center justify-between gap-2 p-2 bg-bg rounded border border-border">
+                  <span className="text-xs text-text truncate flex-1">{ext.name || ext.id}</span>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => setEnabled({ extensionId: ext.id, enabled: false })}
+                      className="text-xs px-2 py-1 bg-editor border border-border text-comment hover:text-text rounded transition-colors"
+                    >
+                      Disable
+                    </button>
+                    <button
+                      onClick={() => uninstall(ext.id)}
+                      className="text-xs px-2 py-1 bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 rounded transition-colors"
+                    >
+                      Uninstall
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const PluginErrorBoundary: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [resetKey, setResetKey] = useState(0);
+  return (
+    <ErrorBoundary
+      level="plugin"
+      resetKey={resetKey}
+      fallbackRender={({ error, errorInfo, reset }) => (
+        <PluginErrorFallback
+          error={error}
+          errorInfo={errorInfo}
+          onReset={() => {
+            reset();
+            setResetKey((k) => k + 1);
+          }}
+        />
+      )}
+    >
+      {children}
+    </ErrorBoundary>
+  );
+};
+
+export const PluginProvider = ({ children }: { children: React.ReactNode }) => {
   const { data: extensions, isLoading: extLoading } = useGetExtensions();
   const isInitialized = usePluginStore((state) => state.isInitialized);
   const updateCheckRan = useRef(false);

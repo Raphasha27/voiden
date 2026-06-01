@@ -1,4 +1,4 @@
-import { Search, Settings, Loader2, Users, Upload, MoreVertical, RefreshCw, Trash2, Cpu, Globe, RotateCw, HardDrive, ArrowUpCircle, ChevronDown, Check } from "lucide-react";
+import { Search, Settings, Loader2, Users, Upload, RefreshCw, Trash2, Cpu, Globe, RotateCw, HardDrive, ArrowUpCircle, ChevronDown, Check } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   useGetExtensions,
@@ -342,11 +342,6 @@ const ExtensionItem = ({ extension }: { extension: Extension }) => {
               <span className="opacity-60">by</span>
               <span className="font-medium text-button-primary/80 hover:text-button-primary transition-colors">{extension.author}</span>
               <div className="ml-auto flex items-center gap-2">
-                {(extension.type === "community" ? !!extension.installedPath : coreIsLocallyAvailable) && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded border border-border text-comment bg-active/20">
-                    {extension.enabled ? "Enabled" : "Disabled"}
-                  </span>
-                )}
               </div>
             </div>
           </div>
@@ -417,11 +412,15 @@ const ExtensionItem = ({ extension }: { extension: Extension }) => {
             </button>
           )
         )}
-        {/* Community: not installed → Install */}
+        {/* Community: not installed → Install (disabled when incompatible) */}
         {extension.type === "community" && !extension.installedPath && (
           installMutation.isPending ? (
             <button disabled className="px-2 py-0.5 text-[10px] bg-button-primary/40 text-bg/60 rounded flex items-center gap-1 cursor-not-allowed">
               <Loader2 size={10} className="animate-spin" /> Installing
+            </button>
+          ) : extension.incompatibleLatestVersion ? (
+            <button disabled className="px-2 py-0.5 text-[10px] bg-active/40 text-comment rounded cursor-not-allowed border border-border">
+              Install
             </button>
           ) : (
             <button onClick={(e) => { e.stopPropagation(); installMutation.mutate(extension); }} className="px-2 py-0.5 text-[10px] bg-button-primary hover:bg-button-primary-hover text-bg rounded font-medium transition-colors">
@@ -441,9 +440,16 @@ const ExtensionItem = ({ extension }: { extension: Extension }) => {
             </button>
           )
         )}
-        {/* Green dot — enabled indicator */}
-        {extension.enabled && coreIsLocallyAvailable && (
-          <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+        {/* Enabled/Disabled badge for installed plugins */}
+        {(extension.type === "community" ? !!extension.installedPath : coreIsLocallyAvailable) && (
+          <span className={cn(
+            "text-[10px] px-1.5 py-0.5 rounded border",
+            extension.enabled
+              ? "border-green-500/30 text-green-400 bg-green-500/10"
+              : "border-border text-comment bg-active/20"
+          )}>
+            {extension.enabled ? "Enabled" : "Disabled"}
+          </span>
         )}
       </div>
     </div>
@@ -566,7 +572,10 @@ export const ExtensionBrowser = () => {
   if (isLoading) return <ExtensionBrowserSkeleton />;
 
   const filteredExtensions = useMemo(() => {
-    let result = extensions || [];
+    // Hide zip-installed plugins that have been uninstalled (no repo to reinstall from)
+    let result = (extensions || []).filter((ext: Extension) =>
+      !(ext.type === "community" && !ext.repo && !ext.installedPath)
+    );
 
     if (category === "core" || category === "community") {
       result = result.filter((ext: Extension) => ext.type === category);
@@ -600,33 +609,24 @@ export const ExtensionBrowser = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <button
-            onClick={doFetchRegistry}
-            disabled={isRefreshing}
-            title="Refresh plugin registry"
-            className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-active transition-colors text-comment disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <RotateCw size={13} className={isRefreshing ? "animate-spin" : ""} />
-          </button>
-          <DropdownMenu.Root modal={false}>
-            <DropdownMenu.Trigger asChild>
-              <button className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-active transition-colors text-comment" aria-label="Extension actions">
-                <MoreVertical size={14} />
-              </button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content side="bottom" align="end" sideOffset={8} className="bg-editor z-[9999] outline-none min-w-[180px] border border-border rounded-md shadow-lg p-1">
-                <DropdownMenu.Item
-                  onClick={() => installFromZip.mutate()}
-                  disabled={installFromZip.isPending}
-                  className="w-full px-3 py-2 text-xs text-left text-text hover:bg-active outline-none cursor-pointer rounded-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {installFromZip.isPending ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                  {installFromZip.isPending ? "Installing..." : "Install from zip"}
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
+          <Tip label="Refresh plugin registry" side="bottom">
+            <button
+              onClick={doFetchRegistry}
+              disabled={isRefreshing}
+              className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-active transition-colors text-comment disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <RotateCw size={13} className={isRefreshing ? "animate-spin" : ""} />
+            </button>
+          </Tip>
+          <Tip label="Install extension from zip file" side="bottom">
+            <button
+              onClick={() => installFromZip.mutate()}
+              disabled={installFromZip.isPending}
+              className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-active transition-colors text-comment disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {installFromZip.isPending ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+            </button>
+          </Tip>
         </div>
 
         {(() => {

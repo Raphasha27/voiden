@@ -331,9 +331,13 @@ export class ExtensionManager {
     if (ext.installedPath) {
       await fs.rm(ext.installedPath, { recursive: true, force: true });
     }
-    // Keep extension in store as "not installed" so it stays visible in Extension Browser.
-    // UI shows "Install" button when installedPath is falsy.
-    this.store.extensions[idx] = { ...ext, installedPath: undefined, enabled: false };
+    if (ext.repo) {
+      // Registry plugin: keep as "not installed" so the user can reinstall from the browser.
+      this.store.extensions[idx] = { ...ext, installedPath: undefined, enabled: false };
+    } else {
+      // Zip-installed plugin: no registry entry to fall back to, remove completely.
+      this.store.extensions.splice(idx, 1);
+    }
     await this.saveInstalledCommunityExtensions();
   }
 

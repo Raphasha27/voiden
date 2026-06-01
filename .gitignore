@@ -55,7 +55,7 @@ apps/electron/bundled-plugins/
 apps/electron/bundled-main-plugins/
 apps/electron/src/bundled-plugins/
 apps/electron/src/bundled-main-plugins/
-apps/electron/src/core-plugins-registry.json
+apps/electron/src/extensions.json
 
 # Local Windows native module patches (not needed on CI/macOS/Linux)
 patches/win-native-fixes/
