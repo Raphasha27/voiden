@@ -58,10 +58,10 @@ REGISTRY_JSON="$REGISTRY_DIR/extensions.json"
 [ -f "$REGISTRY_JSON" ] || fail "$REGISTRY_JSON not found after clone"
 
 PLUGIN_LIST=$(node -e "
-  const r = JSON.parse(require('fs').readFileSync('$REGISTRY_JSON', 'utf8'));
+  const r = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
   const plugins = Array.isArray(r) ? r.filter(p => p.type === 'core') : [];
   plugins.forEach(p => { if (p.id && p.repo) console.log(p.id + ' ' + p.repo); });
-" 2>/dev/null) || fail "Failed to parse $REGISTRY_JSON"
+" "$REGISTRY_JSON" 2>/dev/null) || fail "Failed to parse $REGISTRY_JSON"
 
 if [ -z "$PLUGIN_LIST" ]; then
   echo "  No plugins with repo entries found in registry — skipping clone step."
