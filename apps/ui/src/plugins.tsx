@@ -509,7 +509,7 @@ export function emitPluginEvent(event: string, data?: any): void {
   });
 }
 
-function subscribePluginEvent(event: string, cb: PluginEventCallback): () => void {
+export function subscribePluginEvent(event: string, cb: PluginEventCallback): () => void {
   if (!pluginEventBus.has(event)) pluginEventBus.set(event, new Set());
   pluginEventBus.get(event)!.add(cb);
   return () => pluginEventBus.get(event)?.delete(cb);
