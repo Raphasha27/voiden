@@ -144,8 +144,8 @@ export async function seedBundledPluginsToCache(): Promise<void> {
     if (!existsSync(bundledJs)) continue // Not a bundled plugin — OTA only
 
     const existing = localManifest.plugins[ext.id]
-    // Skip if already cached at the same version (OTA update may have a newer version, keep that)
-    if (existing?.version === ext.version && existing?.file) {
+    // Skip if already cached at same or newer version — preserves OTA downloads that are ahead of the bundled version
+    if (existing?.file && (existing.version === ext.version || semverGt(existing.version, ext.version))) {
       // Still seed changelog if it's missing from cache (may not have been bundled before)
       const changelogCachePath = path.join(cacheDir, ext.id, 'changelog.json')
       const bundledChangelog = path.join(bundledDir, `${ext.id}-changelog.json`)
