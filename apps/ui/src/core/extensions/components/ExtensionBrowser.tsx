@@ -548,10 +548,17 @@ export const ExtensionBrowser = () => {
     if (!coreExt?.fetchRegistry) return;
     setIsRefreshing(true);
     try {
-      await coreExt.fetchRegistry();
+      const result = await coreExt.fetchRegistry();
       const updated = await extApi?.getAll?.();
       if (updated) queryClient.setQueryData(["extensions"], updated);
       _lastRegistryFetch = Date.now();
+      if (result?.newPluginCount > 0) {
+        toast.success(
+          result.newPluginCount === 1
+            ? "1 new plugin available"
+            : `${result.newPluginCount} new plugins available`
+        );
+      }
       await doCheckUpdates();
     } catch {
       // silently ignore — no network

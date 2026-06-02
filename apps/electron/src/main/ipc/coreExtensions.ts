@@ -2,7 +2,7 @@ import { ipcMain, app, net, BrowserWindow } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { existsSync, watch, readFileSync } from 'node:fs'
-import { coreExtensions, fetchAndUpdateCoreRegistry, remoteVersions, remoteVoidenVersions } from '../config/coreExtensions'
+import { coreExtensions, fetchAndUpdateCoreRegistry, remoteVersions, remoteVoidenVersions, remoteNewPlugins } from '../config/coreExtensions'
 import { getMainProcessExtensionResults } from '../extensionLoader'
 import { coreCacheDir, githubCachePath, coreUninstalledPath } from '../extension/paths'
 
@@ -467,10 +467,11 @@ export function registerCoreExtensionsIpcHandlers(): void {
     try {
       const appVersion = app.getVersion()
 
-      // Re-fetch registry only when data is stale (>5 min old) or not yet loaded.
-      // This prevents a slow GitHub round-trip on every manual "Check Update" click.
+      // Always fetch fresh when checking all plugins. For a single-plugin check
+      // (manual "Check Update" on a specific card), use the TTL to avoid an
+      // unnecessary round-trip.
       const now = Date.now()
-      if (remoteVersions.size === 0 || now - lastRegistryFetchAt > REGISTRY_TTL_MS) {
+      if (!pluginId || remoteVersions.size === 0 || now - lastRegistryFetchAt > REGISTRY_TTL_MS) {
         await fetchAndUpdateCoreRegistry()
         lastRegistryFetchAt = now
       }
@@ -630,7 +631,7 @@ export function registerCoreExtensionsIpcHandlers(): void {
     return readLocalManifest()
   })
 
-  ipcMain.handle('coreExtensions:fetchRegistry', async (): Promise<void> => {
+  ipcMain.handle('coreExtensions:fetchRegistry', async (): Promise<{ newPluginCount: number }> => {
     try {
       await fetchAndUpdateCoreRegistry();
       const { extensionManager } = await import('../state');
@@ -639,8 +640,10 @@ export function registerCoreExtensionsIpcHandlers(): void {
       }
       // Clear the local cachedRegistry so it's re-built from the now-updated coreExtensions array
       cachedRegistry = null;
+      return { newPluginCount: remoteNewPlugins.length };
     } catch (err) {
       console.warn('[CoreExtensions] fetchRegistry IPC failed:', err);
+      return { newPluginCount: 0 };
     }
   })
 
