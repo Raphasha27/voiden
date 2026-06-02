@@ -103,7 +103,7 @@ for /d %%d in ("%PLUGINS_DIR%\*") do set /a PLUGIN_COUNT+=1
 
 REM ─── Step 3: Remove node_modules (skip plugins/) ─────────────────────────────
 if "!SKIP_INSTALL!"=="true" (
-    echo Skipping node_modules removal (--skip-install)
+    echo Skipping node_modules removal (--skip-install^)
 ) else (
     echo Removing node_modules...
     for /d /r . %%d in (node_modules) do (
@@ -147,7 +147,7 @@ echo.
 
 REM ─── Step 6: Remove Vite / build caches ──────────────────────────────────────
 if "!SKIP_INSTALL!"=="true" (
-    echo Skipping Vite/build cache removal (--skip-install)
+    echo Skipping Vite/build cache removal (--skip-install^)
 ) else (
     echo Removing build caches...
     if exist "apps\ui\node_modules\.vite" rd /s /q "apps\ui\node_modules\.vite" 2>nul
@@ -159,7 +159,7 @@ echo.
 
 REM ─── Step 7: Fresh install ────────────────────────────────────────────────────
 if "!SKIP_INSTALL!"=="true" (
-    echo Skipping yarn install (--skip-install)
+    echo Skipping yarn install (--skip-install^)
 ) else (
     echo Running yarn install...
     call yarn install
