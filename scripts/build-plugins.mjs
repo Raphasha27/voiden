@@ -204,6 +204,7 @@ async function buildPlugin({ repoDir, pluginId, entry, manifestPath }, { silent 
 
   await build({
     configFile: false,
+    root: repoDir,
     plugins: [
       {
         name: 'inject-bundle-version',

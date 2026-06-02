@@ -107,9 +107,13 @@ echo -e "${GREEN}✓ Removed TypeScript build cache${NC}"
 echo ""
 
 # ─── Step 6: Remove Vite / build caches ──────────────────────────────────────
-echo -e "${YELLOW}Removing build caches...${NC}"
-rm -rf apps/ui/node_modules/.vite apps/ui/.vite apps/electron/out 2>/dev/null || true
-echo -e "${GREEN}✓ Removed build caches${NC}"
+if [ "$SKIP_INSTALL" = true ]; then
+  echo -e "${YELLOW}Skipping Vite/build cache removal (--skip-install)${NC}"
+else
+  echo -e "${YELLOW}Removing build caches...${NC}"
+  rm -rf apps/ui/node_modules/.vite apps/ui/.vite apps/electron/out 2>/dev/null || true
+  echo -e "${GREEN}✓ Removed build caches${NC}"
+fi
 echo ""
 
 # ─── Step 7: Fresh install ────────────────────────────────────────────────────

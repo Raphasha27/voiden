@@ -143,11 +143,15 @@ echo [OK] Removed TypeScript build cache
 echo.
 
 REM ─── Step 6: Remove Vite / build caches ──────────────────────────────────────
-echo Removing build caches...
-if exist "apps\ui\node_modules\.vite" rd /s /q "apps\ui\node_modules\.vite" 2>nul
-if exist "apps\ui\.vite" rd /s /q "apps\ui\.vite" 2>nul
-if exist "apps\electron\out" rd /s /q "apps\electron\out" 2>nul
-echo [OK] Removed build caches
+if "%SKIP_INSTALL%"=="true" (
+    echo Skipping Vite/build cache removal (--skip-install)
+) else (
+    echo Removing build caches...
+    if exist "apps\ui\node_modules\.vite" rd /s /q "apps\ui\node_modules\.vite" 2>nul
+    if exist "apps\ui\.vite" rd /s /q "apps\ui\.vite" 2>nul
+    if exist "apps\electron\out" rd /s /q "apps\electron\out" 2>nul
+    echo [OK] Removed build caches
+)
 echo.
 
 REM ─── Step 7: Fresh install ────────────────────────────────────────────────────
