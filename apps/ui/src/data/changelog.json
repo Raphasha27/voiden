@@ -1,5 +1,30 @@
 [
   {
+    "version": "v2.0.0-beta.2",
+    "date": "2/6/2026",
+    "title": "Plugin Independence, create-plugin & File Search",
+    "description": "Core plugins are now independent repositories, decoupled from the main monorepo for cleaner versioning and contribution. Introduces @voiden/create-plugin to scaffold a plugin workspace with a single command, along with plugin UI improvements and a batch of community-contributed fixes.",
+    "icon": "Plug",
+    "iconColor": "text-violet-400",
+    "bgColor": "bg-gradient-to-br from-violet-900 to-slate-900",
+    "changes": {
+      "Added": [
+        "@voiden/create-plugin — new standalone package to scaffold a Voiden plugin workspace with a single command, making it easier to build and publish plugins without manual boilerplate setup"
+      ],
+      "Improved": [
+        "Core plugins refactored into independent repositories — each plugin now lives in its own repo for cleaner versioning, isolated releases, and easier community contribution",
+        "Plugin install and update UI — clearer status indicators, improved install flow, and more reliable update detection in the extension manager",
+        "@voiden/sdk v1.1.0 — plugins can now register top bar icon buttons (registerTopBarItem), help panel commands (registerHelpCommand), and declarative settings fields (text, number, select, toggle) auto-saved to userData per plugin; a relative-path file system API (context.fs) is available for reading, writing, creating, deleting, and listing project files; all capabilities are gated behind a manifest permission system — plugins must declare which permissions they use (filesystem, settings, commandPalette, contextMenus, events)",
+        "Environment variable editor — improved layout, usability, and naming consistency",
+        "Identifier and file naming standardized to kebab-case across the plugin system",
+        "File system search — added file mask, directory mask, and hidden files toggle; FileSystemList refactored from a single 2000+ line file into smaller focused modules — contributed by Lars Benedetto"
+      ],
+      "Fixed": [
+        "\"Add File\" button no longer gets hidden when two or more cURL blocks are present — the layout now adjusts correctly without requiring manual blank lines below the block"
+      ]
+    }
+  },
+  {
     "version": "v2.0.0-beta.1",
     "date": "18/05/2026",
     "title": "Architecture Refactor & Voiden Runner",
