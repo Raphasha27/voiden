@@ -20,8 +20,8 @@ import { spawnSync } from 'child_process'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const pluginsDir = resolve(__dirname, '../plugins')
-const bundledPluginsDir = resolve(__dirname, '../apps/electron/src/bundled-plugins')
-const bundledMainPluginsDir = resolve(__dirname, '../apps/electron/src/bundled-main-plugins')
+const bundledPluginsDir = resolve(__dirname, '../apps/electron/bundled-plugins')
+const bundledMainPluginsDir = resolve(__dirname, '../apps/electron/bundled-main-plugins')
 
 /**
  * Rollup plugin that replaces host-app imports with inline shims reading from
@@ -322,7 +322,7 @@ for (const plugin of plugins) {
 
 console.log(`\n${plugins.length - failed}/${plugins.length} bundles built → plugins/<id>/dist/`)
 if (isDev && failed === 0) {
-  console.log(`Dev: copied bundles → apps/electron/src/bundled-plugins/ + bundled-main-plugins/`)
+  console.log(`Dev: copied bundles → apps/electron/bundled-plugins/ + bundled-main-plugins/`)
 }
 if (failed > 0 && !isWatch) {
   console.error(`${failed} build(s) failed.`)

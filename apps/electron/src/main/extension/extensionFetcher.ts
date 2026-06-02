@@ -16,6 +16,8 @@ function httpsGet(url: string): Promise<string> {
       headers: {
         'User-Agent': `Voiden/${app.getVersion()} (${process.platform}; ${process.arch})`,
         'Accept': 'application/vnd.github.v3+json',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
       },
     };
     https.get(url, reqOptions, (res) => {

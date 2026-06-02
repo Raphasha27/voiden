@@ -277,7 +277,9 @@ export const usePluginStore = create<PluginStoreState>((set) => ({
   editorActions: [],
   addEditorAction: (action) => {
     set((state) => ({
-      editorActions: [...state.editorActions, action],
+      editorActions: state.editorActions.some((a) => a.id === action.id)
+        ? state.editorActions
+        : [...state.editorActions, action],
     }));
   },
   statusBarItems: [],
@@ -1874,7 +1876,10 @@ export const PluginProvider = ({ children }: { children: React.ReactNode }) => {
     })();
   }, [isInitialized]);
 
+  const reloadingRef = useRef(false);
   const reloadPlugins = useCallback(async () => {
+    if (reloadingRef.current) return;
+    reloadingRef.current = true;
     // IMPORTANT: Set isInitialized to false FIRST to prevent components from rendering during reload
     usePluginStore.setState({ isInitialized: false });
 
@@ -1893,6 +1898,8 @@ export const PluginProvider = ({ children }: { children: React.ReactNode }) => {
       console.error("[PluginProvider] Critical error loading plugins:", err);
       usePluginStore.getState().addPluginError('__plugin_system__', String(err));
       usePluginStore.getState().initialize();
+    } finally {
+      reloadingRef.current = false;
     }
   }, [getPlugins]);
 

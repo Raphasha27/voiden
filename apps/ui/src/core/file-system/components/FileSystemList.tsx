@@ -16,6 +16,7 @@ import { useElectronEvent } from "@/core/providers";
 import { useSearchStore } from "@/core/stores/searchStore";
 import { useBlockContentStore } from "@/core/stores/blockContentStore";
 import { usePanelStore } from "@/core/stores/panelStore";
+import { emitPluginEvent, getContextMenuItems } from "@/plugins";
 
 import { ExtendedFileTree } from "./FileSystemList/types";
 import { DragOverContext, TreeActionsContext } from "./FileSystemList/contexts";

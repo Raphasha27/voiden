@@ -35,7 +35,7 @@ function mapPlugins(reg: any): ExtensionData[] {
 
 function httpsGet(url: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'Voiden-App' } }, (res) => {
+    https.get(url, { headers: { 'User-Agent': 'Voiden-App', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } }, (res) => {
       if (res.statusCode !== 200) {
         reject(new Error(`HTTP ${res.statusCode}`));
         return;
