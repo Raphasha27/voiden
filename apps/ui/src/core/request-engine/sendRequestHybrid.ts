@@ -12,6 +12,7 @@ import { RestApiRequestState, RestApiResponseState } from "./pipeline/types";
 import { hookRegistry, PipelineStage } from "./pipeline";
 import { Buffer } from "buffer";
 import { preSendProcessHook, replaceProcessVariablesInText, saveRuntimeVariables } from "./runtimeVariables";
+import { parseJsonSafe, stringifyJsonSafe } from "./parseJsonSafe";
 import { get } from "http";
 import { getRuntimeVariablesMap } from "./getRequestFromJson";
 import { expandLinkedBlocksInDoc } from "../editors/voiden/utils/expandLinkedBlocks";
@@ -414,7 +415,7 @@ export async function sendRequestHybrid(
 
       if (contentType.includes("json")) {
         try {
-          body = JSON.parse(buffer.toString());
+          body = stringifyJsonSafe(parseJsonSafe(buffer.toString()), 2);
         } catch {
           body = buffer.toString();
         }
@@ -426,7 +427,7 @@ export async function sendRequestHybrid(
     }
 
     // Calculate size
-    const bodyString = typeof body === "string" ? body : JSON.stringify(body);
+    const bodyString = typeof body === "string" ? body : stringifyJsonSafe(body);
     const bytesContent = new TextEncoder().encode(bodyString).length;
 
     const endTime = performance.now();
