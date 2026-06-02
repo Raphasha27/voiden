@@ -17,7 +17,22 @@ fail() { echo -e "${RED}✗ $1${NC}"; exit 1; }
 step() { echo -e "${YELLOW}$1${NC}"; }
 ok()   { echo -e "${GREEN}✓ $1${NC}"; }
 
+# ─── Argument parsing ────────────────────────────────────────────────────────
+SKIP_INSTALL=false
+for arg in "$@"; do
+  case $arg in
+    --skip-install) SKIP_INSTALL=true ;;
+    --help|-h)
+      echo "Usage: $0 [--skip-install]"
+      echo ""
+      echo "  --skip-install   Skip removing node_modules and running yarn install"
+      exit 0 ;;
+    *) echo -e "${RED}Unknown argument: $arg${NC}"; exit 1 ;;
+  esac
+done
+
 echo "Starting Voiden cleanup..."
+[ "$SKIP_INSTALL" = true ] && echo -e "${YELLOW}(--skip-install: skipping node_modules removal and yarn install)${NC}"
 echo ""
 
 PLUGINS_DIR="$ROOT_DIR/plugins"
@@ -70,9 +85,13 @@ echo ""
 PLUGIN_COUNT=$(find "$PLUGINS_DIR" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
 
 # ─── Step 3: Remove node_modules (skip plugins/ — those are separate repos) ──
-echo -e "${YELLOW}Removing node_modules...${NC}"
-find . -path "./plugins" -prune -o -name "node_modules" -type d -prune -exec rm -rf '{}' +
-echo -e "${GREEN}✓ Removed node_modules${NC}"
+if [ "$SKIP_INSTALL" = true ]; then
+  echo -e "${YELLOW}Skipping node_modules removal (--skip-install)${NC}"
+else
+  echo -e "${YELLOW}Removing node_modules...${NC}"
+  find . -path "./plugins" -prune -o -name "node_modules" -type d -prune -exec rm -rf '{}' +
+  echo -e "${GREEN}✓ Removed node_modules${NC}"
+fi
 echo ""
 
 # ─── Step 4: Remove dist folders (skip plugins/) ─────────────────────────────
@@ -94,9 +113,13 @@ echo -e "${GREEN}✓ Removed build caches${NC}"
 echo ""
 
 # ─── Step 7: Fresh install ────────────────────────────────────────────────────
-echo -e "${YELLOW}Running yarn install...${NC}"
-yarn install
-echo -e "${GREEN}✓ Dependencies installed${NC}"
+if [ "$SKIP_INSTALL" = true ]; then
+  echo -e "${YELLOW}Skipping yarn install (--skip-install)${NC}"
+else
+  echo -e "${YELLOW}Running yarn install...${NC}"
+  yarn install
+  echo -e "${GREEN}✓ Dependencies installed${NC}"
+fi
 echo ""
 
 # ─── Step 8: Build each plugin from local source ─────────────────────────────
