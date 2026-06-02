@@ -20,7 +20,8 @@
         "File system search — added file mask, directory mask, and hidden files toggle; FileSystemList refactored from a single 2000+ line file into smaller focused modules — contributed by Lars Benedetto"
       ],
       "Fixed": [
-        "\"Add File\" button no longer gets hidden when two or more cURL blocks are present — the layout now adjusts correctly without requiring manual blank lines below the block"
+        "\"Add File\" button no longer gets hidden when two or more cURL blocks are present — the layout now adjusts correctly without requiring manual blank lines below the block",
+        "Large integers in JSON responses were silently rounded due to JavaScript's native JSON parser precision limits — response panel now uses the 'lossless-json' library to parse and render large integers accurately without rounding"
       ]
     }
   },
