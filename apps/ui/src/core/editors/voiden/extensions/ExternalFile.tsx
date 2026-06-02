@@ -1280,7 +1280,7 @@ export const FileLink = Node.create<FileLinkOptions>({
               if (normalizedProject && !normalizedFilePath.startsWith(normalizedProject)) {
                 isExternal = true;
               } else if (normalizedProject) {
-                storedFilePath = normalizedFilePath.replace(normalizedProject, "");
+                storedFilePath = normalizedFilePath.slice(normalizedProject.length).replace(/^[/\\]/, "");
               }
 
               if (filename) {

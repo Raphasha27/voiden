@@ -654,14 +654,30 @@ export function registerRequestIpcHandler() {
         : (text: string) => Promise.resolve(text),
 
       readFile: async (filePath: string) => {
-        let resolved = filePath;
-        if (activeProject && !path.isAbsolute(filePath)) {
-          // Relative path — resolve against the active project directory so
-          // users can commit relative file references to git and share them.
-          resolved = path.join(activeProject, filePath);
+        // Determine whether the stored path is genuinely absolute.
+        // On Windows, /foo/bar is "root-relative" (path.isAbsolute returns true) but should be
+        // treated as project-relative — only a drive letter (C:/) or UNC (//server) is truly absolute.
+        // On Mac/Linux, path.isAbsolute('/foo') is true, but legacy .void files stored project-relative
+        // paths with a leading slash (e.g. "/subfolder/file.png" instead of "subfolder/file.png").
+        const isGenuinelyAbsolute = process.platform === 'win32'
+          ? /^([A-Za-z]:[/\\]|[/\\]{2})/.test(filePath)
+          : path.isAbsolute(filePath);
+
+        if (activeProject && !isGenuinelyAbsolute) {
+          // Clearly relative — resolve against the project directory.
+          return fs.readFile(path.join(activeProject, filePath));
         }
-        // Absolute paths are used as-is — files can live anywhere on the system.
-        return fs.readFile(resolved);
+
+        // Absolute path: use as-is. But fall back to project-relative on ENOENT so that
+        // legacy .void files with a spurious leading "/" still work on all platforms.
+        try {
+          return await fs.readFile(filePath);
+        } catch (err: any) {
+          if (err?.code === 'ENOENT' && activeProject) {
+            return fs.readFile(path.join(activeProject, filePath));
+          }
+          throw err;
+        }
       },
 
       getDispatcher: (url: string) => getDispatcher(settings, url),
@@ -2077,10 +2093,22 @@ async function handleGrpcRequest(
     // Generate unique ID for this gRPC session
     const grpcId = makeId();
 
-    // Resolve proto file path if it's relative
+    // Resolve proto file path against the active project.
+    // On Windows, /foo/bar is root-relative but should be project-relative.
+    // On Mac/Linux, legacy .void files may store project-relative paths with a leading slash;
+    // fall back to project-join when the absolute path doesn't exist on disk.
+    const isProtoGenuinelyAbsolute = process.platform === 'win32'
+      ? /^([A-Za-z]:[/\\]|[/\\]{2})/.test(protoFilePath ?? '')
+      : isAbsolute(protoFilePath ?? '');
     let resolvedProtoPath = protoFilePath;
-    if (protoFilePath && activeProject && !isAbsolute(protoFilePath)) {
+    if (protoFilePath && activeProject && !isProtoGenuinelyAbsolute) {
       resolvedProtoPath = path.join(activeProject, protoFilePath);
+    } else if (protoFilePath && activeProject && isProtoGenuinelyAbsolute) {
+      try {
+        await fs.access(protoFilePath);
+      } catch {
+        resolvedProtoPath = path.join(activeProject, protoFilePath);
+      }
     }
 
     // Store minimal info in registry (no client yet, no proto needed)
