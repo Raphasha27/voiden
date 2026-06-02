@@ -8,19 +8,16 @@ set "ROOT_DIR=%~dp0"
 cd /d "%ROOT_DIR%"
 
 REM ─── Argument parsing ────────────────────────────────────────────────────────
-set SKIP_INSTALL=false
+set "SKIP_INSTALL=false"
 
-:parse_args
-if "%~1"=="" goto :done_args
-if /i "%~1"=="--skip-install" (
-    set SKIP_INSTALL=true
-    shift
-    goto :parse_args
-)
 if /i "%~1"=="--help" goto :show_help
 if /i "%~1"=="-h" goto :show_help
-echo Unknown argument: %~1
-exit /b 1
+if /i "%~1"=="--skip-install" set "SKIP_INSTALL=true"
+if not "%~1"=="" if /i not "%~1"=="--skip-install" (
+    echo Unknown argument: %~1
+    exit /b 1
+)
+goto :done_args
 
 :show_help
 echo Usage: cleanup.bat [--skip-install]
@@ -31,7 +28,7 @@ exit /b 0
 :done_args
 
 echo Starting Voiden cleanup...
-if "%SKIP_INSTALL%"=="true" echo (--skip-install: skipping node_modules removal and yarn install)
+if "!SKIP_INSTALL!"=="true" echo (--skip-install: skipping node_modules removal and yarn install)
 echo.
 
 set "PLUGINS_DIR=%ROOT_DIR%plugins"
@@ -105,7 +102,7 @@ set PLUGIN_COUNT=0
 for /d %%d in ("%PLUGINS_DIR%\*") do set /a PLUGIN_COUNT+=1
 
 REM ─── Step 3: Remove node_modules (skip plugins/) ─────────────────────────────
-if "%SKIP_INSTALL%"=="true" (
+if "!SKIP_INSTALL!"=="true" (
     echo Skipping node_modules removal (--skip-install)
 ) else (
     echo Removing node_modules...
@@ -125,9 +122,9 @@ echo Removing dist folders...
 for /d /r . %%d in (dist) do (
     set "DPATH=%%~fd"
     set "DCHECK=!DPATH:%PLUGINS_DIR%=!"
-    set "NMCHECK=!DPATH:\node_modules\=!"
     if "!DCHECK!"=="!DPATH!" (
-        if "!NMCHECK!"=="!DPATH!" (
+        echo !DPATH! | find /i "node_modules" >nul 2>&1
+        if errorlevel 1 (
             if exist "%%d" rd /s /q "%%d" 2>nul
         )
     )
@@ -140,16 +137,16 @@ echo Removing TypeScript build cache...
 for /r . %%f in (*.tsbuildinfo) do (
     set "FPATH=%%~ff"
     set "FCHECK=!FPATH:%PLUGINS_DIR%=!"
-    set "NMCHECK=!FPATH:\node_modules\=!"
     if "!FCHECK!"=="!FPATH!" (
-        if "!NMCHECK!"=="!FPATH!" del /q "%%f" 2>nul
+        echo !FPATH! | find /i "node_modules" >nul 2>&1
+        if errorlevel 1 del /q "%%f" 2>nul
     )
 )
 echo [OK] Removed TypeScript build cache
 echo.
 
 REM ─── Step 6: Remove Vite / build caches ──────────────────────────────────────
-if "%SKIP_INSTALL%"=="true" (
+if "!SKIP_INSTALL!"=="true" (
     echo Skipping Vite/build cache removal (--skip-install)
 ) else (
     echo Removing build caches...
@@ -161,7 +158,7 @@ if "%SKIP_INSTALL%"=="true" (
 echo.
 
 REM ─── Step 7: Fresh install ────────────────────────────────────────────────────
-if "%SKIP_INSTALL%"=="true" (
+if "!SKIP_INSTALL!"=="true" (
     echo Skipping yarn install (--skip-install)
 ) else (
     echo Running yarn install...
