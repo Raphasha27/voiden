@@ -89,7 +89,6 @@ const ExtensionItem = ({ extension }: { extension: Extension }) => {
 
   const { refetch: refetchExtensions } = useGetExtensions();
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
   const [isUninstallingCore, setIsUninstallingCore] = useState(false);
   const [isCheckingCommunityUpdate, setIsCheckingCommunityUpdate] = useState(false);
 
@@ -164,7 +163,7 @@ const ExtensionItem = ({ extension }: { extension: Extension }) => {
     try {
       const coreExtApi = (window as any).electron?.coreExtensions;
       if (!coreExtApi?.checkForUpdates) return;
-      const result = await coreExtApi.checkForUpdates();
+      const result = await coreExtApi.checkForUpdates(extension.id);
       if (result?.error) { toast.error(`Update check failed: ${result.error}`); return; }
       if (result?.plugins?.length) setCoreUpdateInfo(result.plugins);
       const thisPlugin = result?.plugins?.find((p: any) => p.pluginId === extension.id);
@@ -183,21 +182,26 @@ const ExtensionItem = ({ extension }: { extension: Extension }) => {
   const handleUpdateCore = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const coreExtApi = (window as any).electron?.coreExtensions;
-    setIsUpdating(true);
+    setInstallingPlugin(extension.id, true);
     try {
       const result = await coreExtApi?.checkAndUpdate?.(extension.id);
       if (result?.updated?.length > 0) {
-        toast.success(`${extension.name} updated. Restarting...`, { duration: 2000 });
-        setTimeout(() => coreExtApi?.restart?.(), 1500);
+        setInstallingPlugin(extension.id, false);
+        const allInfo = Object.values(usePluginStore.getState().coreUpdateInfo);
+        setCoreUpdateInfo(allInfo.map(info =>
+          info.pluginId === extension.id ? { ...info, hasUpdate: false } : info
+        ));
+        toast.success(`${extension.name} updated.`);
+        window.dispatchEvent(new Event('voiden:reloadPlugins'));
       } else if (result?.error) {
-        setIsUpdating(false);
+        setInstallingPlugin(extension.id, false);
         toast.error(`Update failed: ${result.error}`);
       } else {
-        setIsUpdating(false);
+        setInstallingPlugin(extension.id, false);
         toast.error(`Could not download update. Check your connection.`);
       }
     } catch {
-      setIsUpdating(false);
+      setInstallingPlugin(extension.id, false);
       toast.error(`Update failed unexpectedly.`);
     }
   };
@@ -419,7 +423,7 @@ const ExtensionItem = ({ extension }: { extension: Extension }) => {
         )}
         {/* Core: installed + compatible update */}
         {extension.type === "core" && coreIsLocallyAvailable && hasCompatibleUpdate && (
-          isUpdating ? (
+          installingCorePlugins?.[extension.id] ? (
             <button disabled className="px-2 py-0.5 text-[10px] bg-button-primary/40 text-bg/60 rounded flex items-center gap-1 cursor-not-allowed">
               <Loader2 size={10} className="animate-spin" /> Updating
             </button>
@@ -548,6 +552,7 @@ export const ExtensionBrowser = () => {
       const updated = await extApi?.getAll?.();
       if (updated) queryClient.setQueryData(["extensions"], updated);
       _lastRegistryFetch = Date.now();
+      await doCheckUpdates();
     } catch {
       // silently ignore — no network
     } finally {

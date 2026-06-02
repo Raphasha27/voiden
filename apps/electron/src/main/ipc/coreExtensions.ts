@@ -460,7 +460,7 @@ export function registerCoreExtensionsIpcHandlers(): void {
    * remoteVersions (populated by fetchAndUpdateCoreRegistry) is the source of truth for
    * what is available on GitHub. coreExtensions reflects the local snapshot and is never mutated.
    */
-  ipcMain.handle('coreExtensions:checkForUpdates', async (): Promise<{
+  ipcMain.handle('coreExtensions:checkForUpdates', async (_event, pluginId?: string): Promise<{
     plugins: PluginUpdateInfo[]
     error?: string
   }> => {
@@ -478,7 +478,8 @@ export function registerCoreExtensionsIpcHandlers(): void {
       const localManifest = await readLocalManifest()
 
       const plugins: PluginUpdateInfo[] = []
-      for (const ext of coreExtensions) {
+      const extensionsToCheck = pluginId ? coreExtensions.filter(e => e.id === pluginId) : coreExtensions
+      for (const ext of extensionsToCheck) {
         if (!ext.repo) continue
 
         // remoteVersion comes from the GitHub registry fetch — NOT from the local snapshot.

@@ -94,7 +94,7 @@ export const { CompletionContext, CompletionResult, autocompletion,
   completeAnyWord, closeBrackets, closeBracketsKeymap,
   completionKeymap, ifIn, ifNotIn, snippetCompletion } = _s;`,
 
-    '@tiptap/core': "const _s=window.__voiden_shims__['@tiptap/core']||{};export default _s;export const {Editor,Extension,Node,Mark,Command,NodeViewProps,Range,JSONContent,generateJSON,mergeAttributes,getExtensionField,callOrReturn,findParentNode,findParentNodeClosestToPos,getChangedRanges,isActive,isNodeActive,isMarkActive,getHTMLFromFragment,getText,getTextBetween}=_s;",
+    '@tiptap/core': "const _s=window.__voiden_shims__['@tiptap/core']||{};export default _s;export const {Editor,Extension,Node,Mark,Command,NodeViewProps,Range,JSONContent,generateJSON,mergeAttributes,getSchema,getExtensionField,callOrReturn,findParentNode,findParentNodeClosestToPos,getChangedRanges,isActive,isNodeActive,isMarkActive,getHTMLFromFragment,getText,getTextBetween}=_s;",
     '@tiptap/pm/model': "const _s=window.__voiden_shims__['@tiptap/pm/model']||{};export default _s;export const {DOMParser,DOMSerializer,Fragment,Mark,Node,NodeRange,NodeType,ReplaceError,Schema,Slice}=_s;",
     '@tiptap/pm/state': "const _s=window.__voiden_shims__['@tiptap/pm/state']||{};export default _s;export const {EditorState,Plugin,PluginKey,TextSelection,NodeSelection,AllSelection,Selection,Transaction}=_s;",
     '@tiptap/pm/tables': "const _s=window.__voiden_shims__['@tiptap/pm/tables']||{};export default _s;export const {CellSelection,TableMap,addColumnAfter,addColumnBefore,addRowAfter,addRowBefore,deleteColumn,deleteRow,deleteTable,goToNextCell,mergeCells,splitCell,tableEditing}=_s;",

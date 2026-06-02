@@ -179,7 +179,6 @@ export const ExtensionDetails = ({
     (window as any).__voiden_ota_manifests__?.[extensionData.id]?.version ?? extensionData.version;
 
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
   const [isUninstallingCore, setIsUninstallingCore] = useState(false);
   const [isCheckingCommunityUpdate, setIsCheckingCommunityUpdate] = useState(false);
 
@@ -258,7 +257,7 @@ export const ExtensionDetails = ({
     try {
       const api = coreExtApi();
       if (!api?.checkForUpdates) return;
-      const result = await api.checkForUpdates();
+      const result = await api.checkForUpdates(extensionData.id);
       if (result?.error) { toast.error(`Update check failed: ${result.error}`); return; }
       if (result?.plugins?.length) setCoreUpdateInfo(result.plugins);
       const thisPlugin = result?.plugins?.find((p: any) => p.pluginId === extensionData.id);
@@ -275,21 +274,26 @@ export const ExtensionDetails = ({
   };
 
   const handleUpdateCore = async () => {
-    setIsUpdating(true);
+    setInstallingPlugin(extensionData.id, true);
     try {
       const result = await coreExtApi()?.checkAndUpdate?.(extensionData.id);
       if (result?.updated?.length > 0) {
-        toast.success(`${extensionData.name} updated. Restarting...`, { duration: 2000 });
-        setTimeout(() => coreExtApi()?.restart?.(), 1500);
+        setInstallingPlugin(extensionData.id, false);
+        const allInfo = Object.values(usePluginStore.getState().coreUpdateInfo);
+        setCoreUpdateInfo(allInfo.map(info =>
+          info.pluginId === extensionData.id ? { ...info, hasUpdate: false } : info
+        ));
+        toast.success(`${extensionData.name} updated.`);
+        window.dispatchEvent(new Event('voiden:reloadPlugins'));
       } else if (result?.error) {
-        setIsUpdating(false);
+        setInstallingPlugin(extensionData.id, false);
         toast.error(`Update failed: ${result.error}`);
       } else {
-        setIsUpdating(false);
+        setInstallingPlugin(extensionData.id, false);
         toast.error("Could not download update. Check your connection.");
       }
     } catch {
-      setIsUpdating(false);
+      setInstallingPlugin(extensionData.id, false);
       toast.error("Update failed unexpectedly.");
     }
   };
@@ -379,7 +383,7 @@ export const ExtensionDetails = ({
           </button>
 
           {hasCompatibleUpdate && (
-            isUpdating ? (
+            installingCorePlugins[extensionData.id] ? (
               <button disabled className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-button-primary/40 text-bg/60 cursor-not-allowed">
                 <Loader2 size={11} className="animate-spin" /> Updating...
               </button>

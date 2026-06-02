@@ -1912,6 +1912,13 @@ export const PluginProvider = ({ children }: { children: React.ReactNode }) => {
     return () => ipc.removeListener('coreExtensions:bundledPluginsChanged', handler);
   }, [reloadPlugins]);
 
+  // Plugin update: UI components dispatch this event after OTA update to reload without restart
+  useEffect(() => {
+    const handler = () => reloadPlugins();
+    window.addEventListener('voiden:reloadPlugins', handler);
+    return () => window.removeEventListener('voiden:reloadPlugins', handler);
+  }, [reloadPlugins]);
+
   // Log main-process extension load results to DevTools console (same format as renderer plugins).
   // On mount: pull startup results (fired before renderer subscribed).
   // At runtime: subscribe to live events (e.g. after OTA install).
