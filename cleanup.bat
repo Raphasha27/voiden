@@ -120,13 +120,16 @@ if "%SKIP_INSTALL%"=="true" (
 )
 echo.
 
-REM ─── Step 4: Remove dist folders (skip plugins/) ─────────────────────────────
+REM ─── Step 4: Remove dist folders (skip plugins/ and node_modules/) ──────────
 echo Removing dist folders...
 for /d /r . %%d in (dist) do (
     set "DPATH=%%~fd"
     set "DCHECK=!DPATH:%PLUGINS_DIR%=!"
+    set "NMCHECK=!DPATH:\node_modules\=!"
     if "!DCHECK!"=="!DPATH!" (
-        if exist "%%d" rd /s /q "%%d" 2>nul
+        if "!NMCHECK!"=="!DPATH!" (
+            if exist "%%d" rd /s /q "%%d" 2>nul
+        )
     )
 )
 echo [OK] Removed dist folders
@@ -137,7 +140,10 @@ echo Removing TypeScript build cache...
 for /r . %%f in (*.tsbuildinfo) do (
     set "FPATH=%%~ff"
     set "FCHECK=!FPATH:%PLUGINS_DIR%=!"
-    if "!FCHECK!"=="!FPATH!" del /q "%%f" 2>nul
+    set "NMCHECK=!FPATH:\node_modules\=!"
+    if "!FCHECK!"=="!FPATH!" (
+        if "!NMCHECK!"=="!FPATH!" del /q "%%f" 2>nul
+    )
 )
 echo [OK] Removed TypeScript build cache
 echo.

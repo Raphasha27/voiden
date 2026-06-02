@@ -96,13 +96,13 @@ echo ""
 
 # ─── Step 4: Remove dist folders (skip plugins/) ─────────────────────────────
 echo -e "${YELLOW}Removing dist folders...${NC}"
-find . -path "./plugins" -prune -o -name "dist" -type d -prune -exec rm -rf '{}' +
+find . -path "./plugins" -prune -o -path "*/node_modules/*" -prune -o -name "dist" -type d -prune -exec rm -rf '{}' +
 echo -e "${GREEN}✓ Removed dist folders${NC}"
 echo ""
 
 # ─── Step 5: Remove TypeScript build cache ────────────────────────────────────
 echo -e "${YELLOW}Removing TypeScript build cache...${NC}"
-find . -path "./plugins" -prune -o -name "*.tsbuildinfo" -type f -delete 2>/dev/null || true
+find . -path "./plugins" -prune -o -path "*/node_modules/*" -prune -o -name "*.tsbuildinfo" -type f -delete 2>/dev/null || true
 echo -e "${GREEN}✓ Removed TypeScript build cache${NC}"
 echo ""
 
