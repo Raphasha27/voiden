@@ -431,7 +431,7 @@ export async function sendRequestHybrid(
 
       if (contentType.includes("json")) {
         try {
-          body = losslessParse(buffer.toString(), null, parseNumberSafe);
+          body = losslessStringify(losslessParse(buffer.toString(), null, parseNumberSafe), undefined, 2) ?? buffer.toString();
         } catch {
           body = buffer.toString();
         }
