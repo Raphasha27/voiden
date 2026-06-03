@@ -1,0 +1,81 @@
+{
+  "releases": [
+    {
+      "version": "2.0.1",
+      "date": "June 2026",
+      "sections": [
+        {
+          "title": "New Features",
+          "items": [
+            {
+              "emoji": "🔌",
+              "title": "Plugin Hot-Reload",
+              "description": "Install and update community plugins without restarting the app. Changes take effect instantly."
+            },
+            {
+              "emoji": "🗂",
+              "title": "Collection Runner",
+              "description": "Run a sequence of linked .void files in serial order from the sidebar — great for API test flows."
+            }
+          ]
+        },
+        {
+          "title": "Improvements",
+          "items": [
+            {
+              "emoji": "⚡",
+              "title": "Faster Plugin Loading",
+              "description": "Core extensions now load from pre-bundled files, reducing startup time significantly."
+            },
+            {
+              "emoji": "🎨",
+              "title": "Refined Loading Experience",
+              "description": "Smoother transitions when enabling, disabling, or updating extensions — no more full loading screens on reload."
+            }
+          ]
+        },
+        {
+          "title": "Bug Fixes",
+          "items": [
+            {
+              "emoji": "🐛",
+              "title": "Editor Stability on Uninstall",
+              "description": "Fixed a DOM error that occurred when uninstalling extensions with an active editor open."
+            },
+            {
+              "emoji": "🔢",
+              "title": "Large Number Precision",
+              "description": "JSON response parsing now preserves full precision for large integers."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "welcome": {
+    "headline": "Welcome to Voiden",
+    "subheadline": "The API client built for developers who live in their editor.",
+    "items": [
+      {
+        "emoji": "📝",
+        "title": "Void Files",
+        "description": "Write API requests in plain markdown. Version-controlled, shareable, and readable by humans."
+      },
+      {
+        "emoji": "🔌",
+        "title": "Plugins",
+        "description": "Extend Voiden with community plugins or build your own using the Voiden SDK."
+      },
+      {
+        "emoji": "🌐",
+        "title": "Environments",
+        "description": "Switch between dev, staging, and production with instant variable interpolation."
+      },
+      {
+        "emoji": "📜",
+        "title": "Request History",
+        "description": "Every request is logged. Search, replay, and export to curl in one click."
+      }
+    ]
+  }
+}

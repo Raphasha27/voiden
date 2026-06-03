@@ -6,6 +6,7 @@ import * as semver from "semver";
 import * as https from "https";
 import { execFile } from "child_process";
 import { windowManager } from "./windowManager";
+import { saveSettings } from "./settings";
 
 // Update state management
 enum UpdateState {
@@ -480,6 +481,7 @@ function setupAutoUpdaterListeners() {
       detail: "The application will restart to complete the installation.",
     }).then((restartResponse) => {
       if (restartResponse.response === 0) {
+        saveSettings({ ui: { show_whats_new_after_update: true } });
         autoUpdater.quitAndInstall(true, true);
       } else {
         setUpdateState(UpdateState.IDLE);
