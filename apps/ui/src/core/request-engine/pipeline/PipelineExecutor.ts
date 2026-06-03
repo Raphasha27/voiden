@@ -18,7 +18,6 @@ import {
 } from './types';
 import { hookRegistry } from './HookRegistry';
 import type { Environment } from '../requestState';
-import { parseJsonSafe, stringifyJsonSafe } from '../parseJsonSafe';
 
 /**
  * Main pipeline executor class
@@ -294,7 +293,7 @@ export class PipelineExecutor {
 
     try {
       if (contentType?.includes('json')) {
-        body = stringifyJsonSafe(parseJsonSafe(await response.text()), 2);
+        body = await response.json();
       } else if (contentType?.includes('text')) {
         body = await response.text();
       } else {
@@ -313,7 +312,7 @@ export class PipelineExecutor {
     }));
 
     // Calculate size
-    const bodyString = typeof body === 'string' ? body : stringifyJsonSafe(body);
+    const bodyString = typeof body === 'string' ? body : JSON.stringify(body);
     const bytesContent = new TextEncoder().encode(bodyString).length;
 
     const responseState: RestApiResponseState = {
