@@ -57,9 +57,6 @@ apps/electron/src/bundled-plugins/
 apps/electron/src/bundled-main-plugins/
 apps/electron/src/extensions.json
 
-# Local Windows native module patches (not needed on CI/macOS/Linux)
-patches/win-native-fixes/
-
 packages/voiden-runner/dist
 packages/executors/dist
 
