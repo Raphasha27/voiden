@@ -23,10 +23,10 @@ import logo from "@/assets/logo-dark.png";
 let _lastRegistryFetch = 0;
 let _lastUpdateCheck = 0;
 
-const ExtensionIcon = ({ extension, size = "md" }: { extension: Extension; size?: "sm" | "md" }) => {
-  const dim = size === "sm" ? "w-8 h-8" : "w-10 h-10";
-  const imgDim = size === "sm" ? "w-5 h-5" : "w-7 h-7";
-  const iconSize = size === "sm" ? 16 : 20;
+const ExtensionIcon = ({ extension, size = "md" }: { extension: Extension; size?: "sm" | "md" | "lg" }) => {
+  const dim = size === "sm" ? "w-8 h-8" : size === "lg" ? "w-14 h-14" : "w-10 h-10";
+  const imgDim = size === "sm" ? "w-5 h-5" : size === "lg" ? "w-9 h-9" : "w-7 h-7";
+  const iconSize = size === "sm" ? 16 : size === "lg" ? 28 : 20;
 
   if (extension.icon) {
     const icon = extension.icon;
@@ -325,153 +325,166 @@ const ExtensionItem = ({ extension }: { extension: Extension }) => {
     return renderContextMenu();
   };
 
+  const isInstalled = extension.type === "community" ? !!extension.installedPath : coreIsLocallyAvailable;
+
   return (
     <div
       className={cn(
-        "group relative mx-2 my-2 rounded-xl border border-border bg-panel/80 hover:bg-panel cursor-pointer transition-colors shadow-sm hover:shadow-md min-h-[90px]",
-        !extension.enabled && coreIsLocallyAvailable && "opacity-70"
+        "group mx-2 my-2 rounded-xl border border-border bg-panel/80 hover:bg-panel cursor-pointer transition-colors shadow-sm hover:shadow-md",
+        !extension.enabled && isInstalled && "opacity-70"
       )}
       onClick={() => openExtensionDetailsMutation.mutate(extension)}
     >
-      <div className="p-4 pr-14">
-        <div className="flex items-start gap-4">
-          <div className="mt-0.5">
-            <ExtensionIcon extension={extension} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className={cn("text-sm font-semibold truncate mt-0", extension.enabled ? "text-text" : "text-comment")}>
-                {extension.name}
-              </h3>
-              <span className="text-xs text-comment flex-shrink-0">v{displayVersion}</span>
-              <span className={cn("text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border", typeBadgeClass)}>
-                {typeLabel}
-              </span>
-              {(extension.latestVersion || hasCompatibleUpdate) && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded border border-blue-500/20 text-blue-300 bg-blue-500/10">
-                  Update available
-                </span>
-              )}
-              {(extension.incompatibleLatestVersion || hasIncompatibleUpdate) && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded border border-border text-accent bg-bg">
-                  v{updateInfo?.remoteVersion ?? extension.incompatibleLatestVersion} — needs Voiden {updateInfo?.requiredAppVersion ?? extension.requiredVoidenVersion}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-comment line-clamp-2 mt-1.5 leading-relaxed">{extension.description}</p>
-            <div className="flex items-center gap-2 text-[11px] text-comment mt-2.5">
-              <span className="opacity-60">by</span>
-              <span className="font-medium text-button-primary/80 hover:text-button-primary transition-colors">{extension.author}</span>
-              <div className="ml-auto flex items-center gap-2">
-              </div>
-            </div>
-          </div>
+      <div className="p-2 flex gap-3 items-start">
+        {/* Left column — logo */}
+        <div className="flex-shrink-0 self-center">
+          <ExtensionIcon extension={extension} size="lg" />
         </div>
-      </div>
 
-      {/* Actions — top-right */}
-      <div className="absolute top-2 right-2 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-        {error && error.kind === 'permission' ? (
-          <Tip label={error.error} side="bottom" align="end">
-            <button
-              onClick={(e) => { e.stopPropagation(); toast.warning(error.error); }}
-              className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 transition-colors"
-            >
-              Needs Permission
-            </button>
-          </Tip>
-        ) : error ? (
-          <Tip label={error.error} side="bottom" align="end">
-            <button
-              onClick={(e) => { e.stopPropagation(); toast.error(error.error); }}
-              className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors"
-            >
-              Error
-            </button>
-          </Tip>
-        ) : null}
-        {hasCompatibleUpdate && coreIsLocallyAvailable && (
-          <Tip label={`Update available — v${updateInfo?.remoteVersion}`} side="bottom" align="end">
-            <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0 cursor-default" />
-          </Tip>
-        )}
-        {hasIncompatibleUpdate && (
-          <Tip label={`v${updateInfo?.remoteVersion} requires Voiden ${updateInfo?.requiredAppVersion}`} side="bottom" align="end">
-            <span className="w-2 h-2 rounded-full bg-comment/50 flex-shrink-0 cursor-default" />
-          </Tip>
-        )}
-        {renderActions()}
-      </div>
+        {/* Right column */}
+        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
 
-      {/* Bottom-right — Install / Update / enabled dot */}
-      <div className="absolute bottom-2 right-2 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-        {/* Core: not installed → Install (disabled when incompatible) */}
-        {extension.type === "core" && !coreIsLocallyAvailable && (
-          installingCorePlugins?.[extension.id] ? (
-            <button disabled className="px-2 py-0.5 text-[10px] bg-button-primary/40 text-bg/60 rounded flex items-center gap-1 cursor-not-allowed">
-              <Loader2 size={10} className="animate-spin" /> Installing
-            </button>
-          ) : (extension.incompatibleLatestVersion || hasIncompatibleUpdate) ? (
-            <button disabled className="px-2 py-0.5 text-[10px] bg-active/40 text-comment rounded cursor-not-allowed border border-border">
-              Install
-            </button>
-          ) : (
-            <button onClick={handleInstallCore} className="px-2 py-0.5 text-[10px] bg-button-primary hover:bg-button-primary-hover text-bg rounded font-medium transition-colors">
-              Install
-            </button>
-          )
-        )}
-        {/* Core: installed + compatible update */}
-        {extension.type === "core" && coreIsLocallyAvailable && hasCompatibleUpdate && (
-          installingCorePlugins?.[extension.id] ? (
-            <button disabled className="px-2 py-0.5 text-[10px] bg-button-primary/40 text-bg/60 rounded flex items-center gap-1 cursor-not-allowed">
-              <Loader2 size={10} className="animate-spin" /> Updating
-            </button>
-          ) : (
-            <button onClick={handleUpdateCore} className="px-2 py-0.5 text-[10px] bg-button-primary hover:bg-button-primary-hover text-bg rounded font-medium transition-colors">
-              Update
-            </button>
-          )
-        )}
-        {/* Community: not installed → Install (disabled when incompatible) */}
-        {extension.type === "community" && !extension.installedPath && (
-          installMutation.isPending ? (
-            <button disabled className="px-2 py-0.5 text-[10px] bg-button-primary/40 text-bg/60 rounded flex items-center gap-1 cursor-not-allowed">
-              <Loader2 size={10} className="animate-spin" /> Installing
-            </button>
-          ) : extension.incompatibleLatestVersion ? (
-            <button disabled className="px-2 py-0.5 text-[10px] bg-active/40 text-comment rounded cursor-not-allowed border border-border">
-              Install
-            </button>
-          ) : (
-            <button onClick={(e) => { e.stopPropagation(); installMutation.mutate(extension); }} className="px-2 py-0.5 text-[10px] bg-button-primary hover:bg-button-primary-hover text-bg rounded font-medium transition-colors">
-              Install
-            </button>
-          )
-        )}
-        {/* Community: installed + update available */}
-        {extension.type === "community" && extension.installedPath && extension.latestVersion && (
-          updateMutation.isPending ? (
-            <button disabled className="px-2 py-0.5 text-[10px] bg-button-primary/40 text-bg/60 rounded flex items-center gap-1 cursor-not-allowed">
-              <Loader2 size={10} className="animate-spin" /> Updating
-            </button>
-          ) : (
-            <button onClick={(e) => { e.stopPropagation(); updateMutation.mutate(extension.id); }} className="px-2 py-0.5 text-[10px] bg-button-primary hover:bg-button-primary-hover text-bg rounded font-medium transition-colors">
-              Update
-            </button>
-          )
-        )}
-        {/* Enabled/Disabled badge for installed plugins */}
-        {(extension.type === "community" ? !!extension.installedPath : coreIsLocallyAvailable) && (
-          <span className={cn(
-            "text-[10px] px-1.5 py-0.5 rounded border",
-            extension.enabled
-              ? "border-green-500/30 text-green-400 bg-green-500/10"
-              : "border-border text-comment bg-active/20"
-          )}>
-            {extension.enabled ? "Enabled" : "Disabled"}
-          </span>
-        )}
+          {/* Row 1: title + update badges + context menu gear */}
+          <div className="flex items-center gap-2 min-w-0" onClick={(e) => e.stopPropagation()}>
+            <h3
+              className={cn("text-sm font-semibold truncate flex-1 min-w-0 cursor-pointer m-1", extension.enabled || !isInstalled ? "text-text" : "text-comment")}
+              onClick={() => openExtensionDetailsMutation.mutate(extension)}
+            >
+              {extension.name}
+            </h3>
+            {/* Update / incompatible badges */}
+            {((extension.installedPath && extension.latestVersion) || hasCompatibleUpdate) && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded border border-blue-500/20 text-blue-300 bg-blue-500/10 flex-shrink-0">
+                Update
+              </span>
+            )}
+            {(extension.incompatibleLatestVersion || hasIncompatibleUpdate) && (
+              <Tip label={`v${updateInfo?.remoteVersion ?? extension.incompatibleLatestVersion} requires Voiden ${updateInfo?.requiredAppVersion ?? extension.requiredVoidenVersion}`} side="bottom" align="end">
+                <span className="text-[10px] px-1.5 py-0.5 rounded border border-border text-accent bg-bg flex-shrink-0 cursor-default">
+                  Incompatible
+                </span>
+              </Tip>
+            )}
+            {/* Error badge */}
+            {error && error.kind === 'permission' ? (
+              <Tip label={error.error} side="bottom" align="end">
+                <button
+                  onClick={(e) => { e.stopPropagation(); toast.warning(error.error); }}
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 transition-colors flex-shrink-0"
+                >
+                  Permission
+                </button>
+              </Tip>
+            ) : error ? (
+              <Tip label={error.error} side="bottom" align="end">
+                <button
+                  onClick={(e) => { e.stopPropagation(); toast.error(error.error); }}
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors flex-shrink-0"
+                >
+                  Error
+                </button>
+              </Tip>
+            ) : null}
+            {/* Context menu — only for installed plugins */}
+            {isInstalled && renderActions()}
+          </div>
+
+          {/* Row 2: version + type badge */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-mono text-comment">v{displayVersion}</span>
+            <span className={cn("text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border", typeBadgeClass)}>
+              {typeLabel}
+            </span>
+          </div>
+
+          {/* Row 3: description */}
+          {extension.description && (
+            <p className="text-xs text-comment line-clamp-2 leading-relaxed">{extension.description}</p>
+          )}
+
+          {/* Row 4: author (left) + action buttons + enabled badge (right) */}
+          <div className="flex items-center justify-between gap-2 mt-0.5" onClick={(e) => e.stopPropagation()}>
+            <span className="text-[11px] text-comment truncate min-w-0">
+              <span className="opacity-60">by </span>
+              <span className="font-medium text-button-primary/80">{extension.author}</span>
+            </span>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {/* Core: not installed → Install */}
+              {extension.type === "core" && !coreIsLocallyAvailable && (
+                installingCorePlugins?.[extension.id] ? (
+                  <button disabled className="px-2 py-0.5 text-[10px] bg-button-primary/40 text-bg/60 rounded flex items-center gap-1 cursor-not-allowed">
+                    <Loader2 size={10} className="animate-spin" /> Installing
+                  </button>
+                ) : (extension.incompatibleLatestVersion || hasIncompatibleUpdate) ? (
+                  <button disabled className="px-2 py-0.5 text-[10px] bg-active/40 text-comment rounded cursor-not-allowed border border-border">
+                    Install
+                  </button>
+                ) : (
+                  <button onClick={handleInstallCore} className="px-2 py-0.5 text-[10px] bg-button-primary hover:bg-button-primary-hover text-bg rounded font-medium transition-colors">
+                    Install
+                  </button>
+                )
+              )}
+              {/* Core: installed + compatible update */}
+              {extension.type === "core" && coreIsLocallyAvailable && hasCompatibleUpdate && (
+                installingCorePlugins?.[extension.id] ? (
+                  <button disabled className="px-2 py-0.5 text-[10px] bg-button-primary/40 text-bg/60 rounded flex items-center gap-1 cursor-not-allowed">
+                    <Loader2 size={10} className="animate-spin" /> Updating
+                  </button>
+                ) : (
+                  <button onClick={handleUpdateCore} className="px-2 py-0.5 text-[10px] bg-button-primary hover:bg-button-primary-hover text-bg rounded font-medium transition-colors">
+                    Update
+                  </button>
+                )
+              )}
+              {/* Community: not installed → Install */}
+              {extension.type === "community" && !extension.installedPath && (
+                installMutation.isPending ? (
+                  <button disabled className="px-2 py-0.5 text-[10px] bg-button-primary/40 text-bg/60 rounded flex items-center gap-1 cursor-not-allowed">
+                    <Loader2 size={10} className="animate-spin" /> Installing
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const versionToInstall = extension.latestVersion
+                        ? { ...extension, version: extension.latestVersion, latestVersion: undefined }
+                        : extension;
+                      installMutation.mutate(versionToInstall);
+                    }}
+                    className="px-2 py-0.5 text-[10px] bg-button-primary hover:bg-button-primary-hover text-bg rounded font-medium transition-colors"
+                  >
+                    Install
+                  </button>
+                )
+              )}
+              {/* Community: installed + update available */}
+              {extension.type === "community" && extension.installedPath && extension.latestVersion && (
+                updateMutation.isPending ? (
+                  <button disabled className="px-2 py-0.5 text-[10px] bg-button-primary/40 text-bg/60 rounded flex items-center gap-1 cursor-not-allowed">
+                    <Loader2 size={10} className="animate-spin" /> Updating
+                  </button>
+                ) : (
+                  <button onClick={(e) => { e.stopPropagation(); updateMutation.mutate(extension.id); }} className="px-2 py-0.5 text-[10px] bg-button-primary hover:bg-button-primary-hover text-bg rounded font-medium transition-colors">
+                    Update
+                  </button>
+                )
+              )}
+              {/* Enabled/Disabled badge for installed plugins */}
+              {isInstalled && (
+                <span className={cn(
+                  "text-[10px] px-1.5 py-0.5 rounded border",
+                  extension.enabled
+                    ? "border-green-500/30 text-green-400 bg-green-500/10"
+                    : "border-border text-comment bg-active/20"
+                )}>
+                  {extension.enabled ? "Enabled" : "Disabled"}
+                </span>
+              )}
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
   );
