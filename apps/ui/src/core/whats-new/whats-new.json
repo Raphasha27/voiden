@@ -3,51 +3,26 @@
     {
       "version": "2.0.1",
       "date": "June 2026",
-      "sections": [
+      "whatsnew": [
         {
-          "title": "New Features",
-          "items": [
-            {
-              "emoji": "🔌",
-              "title": "Plugin Hot-Reload",
-              "description": "Install and update community plugins without restarting the app. Changes take effect instantly."
-            },
-            {
-              "emoji": "🗂",
-              "title": "Collection Runner",
-              "description": "Run a sequence of linked .void files in serial order from the sidebar — great for API test flows."
-            }
-          ]
+          "icon": "🔌",
+          "title": "Plugin Hot-Reload",
+          "description": "Install and update community plugins without restarting the app — changes take effect instantly. We rebuilt the plugin loader to swap code in place, so your editor stays open, your tabs stay exactly where you left them, and there's no jarring full-app reload interrupting your flow."
         },
         {
-          "title": "Improvements",
-          "items": [
-            {
-              "emoji": "⚡",
-              "title": "Faster Plugin Loading",
-              "description": "Core extensions now load from pre-bundled files, reducing startup time significantly."
-            },
-            {
-              "emoji": "🎨",
-              "title": "Refined Loading Experience",
-              "description": "Smoother transitions when enabling, disabling, or updating extensions — no more full loading screens on reload."
-            }
-          ]
+          "icon": "🗂",
+          "title": "Collection Runner",
+          "description": "Run a sequence of linked .void files in order, straight from the sidebar — perfect for chaining auth, setup, and verification requests into one repeatable API test flow. Each run streams its results live, and you can re-run any step on its own without restarting the whole sequence."
         },
         {
-          "title": "Bug Fixes",
-          "items": [
-            {
-              "emoji": "🐛",
-              "title": "Editor Stability on Uninstall",
-              "description": "Fixed a DOM error that occurred when uninstalling extensions with an active editor open."
-            },
-            {
-              "emoji": "🔢",
-              "title": "Large Number Precision",
-              "description": "JSON response parsing now preserves full precision for large integers."
-            }
-          ]
+          "icon": "⚡",
+          "title": "Faster Plugin Loading",
+          "description": "Core extensions now load from pre-bundled files instead of being compiled on the fly, cutting cold-start time significantly — especially noticeable if you run several plugins at once."
+        },
+        {
+          "icon": "🐛",
+          "title": "Editor & Response Fixes",
+          "description": "Fixed a DOM error that could crash the editor when uninstalling an extension while it was active, and corrected JSON response parsing so large integers keep their full precision instead of being rounded by floating-point conversion."
         }
       ]
     }

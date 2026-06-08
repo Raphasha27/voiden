@@ -1,33 +1,46 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Sparkles } from 'lucide-react';
+import { X, Sparkles, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import whatsNewData from './whats-new.json';
+import { useWhatsNewStore } from './whatsNewStore';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type WhatsNewItem = {
+type WelcomeItem = {
   emoji: string;
   title: string;
   description: string;
 };
 
-type WhatsNewSection = {
+// What's actually worth telling a user about in a release. Releases with an
+// empty `whatsnew` array have nothing announcement-worthy — they're skipped
+// entirely (no spotlight, no popup) but still tracked as "seen".
+type WhatsNewEntry = {
+  icon: string;
   title: string;
-  items: WhatsNewItem[];
+  description: string;
 };
 
 type Release = {
   version: string;
   date: string;
-  sections: WhatsNewSection[];
+  whatsnew: WhatsNewEntry[];
 };
 
 type WelcomeData = {
   headline: string;
   subheadline: string;
-  items: WhatsNewItem[];
+  items: WelcomeItem[];
 };
+
+type Announcement =
+  | { kind: 'fresh-install' }
+  | { kind: 'update'; releases: Release[] }
+  | null;
+
+const ALL_RELEASES = whatsNewData.releases as Release[];
+const WELCOME = whatsNewData.welcome as WelcomeData;
 
 // ── Version helpers ───────────────────────────────────────────────────────────
 
@@ -50,13 +63,22 @@ function saveUiSettings(patch: { last_seen_version?: string; show_whats_new_afte
   (window as any).electron?.userSettings?.set({ ui: patch });
 }
 
-// ── Hook ─────────────────────────────────────────────────────────────────────
+// A release with an empty `whatsnew` has nothing worth interrupting the user
+// for — skip announcing it (it still gets marked as "seen" once passed over).
+function hasAnnouncementContent(release: Release): boolean {
+  return release.whatsnew.length > 0;
+}
 
-function useWhatsNew() {
-  const [open, setOpen] = useState(false);
-  const [isFreshInstall, setIsFreshInstall] = useState(false);
-  const [releases, setReleases] = useState<Release[]>([]);
+// ── Hook: figures out whether there's something new to announce ──────────────
+//
+// Surfaces the announcement (if any) exactly once per release — either right
+// after a fresh install (welcome tour) or right after an update (changelog for
+// every version newer than the one the user last saw).
+
+function useWhatsNewAnnouncement() {
+  const [announcement, setAnnouncement] = useState<Announcement>(null);
   const [baseVersion, setBaseVersion] = useState('');
+  const setHasUnseen = useWhatsNewStore(s => s.setHasUnseen);
 
   useEffect(() => {
     (async () => {
@@ -75,73 +97,178 @@ function useWhatsNew() {
 
       if (showAfterUpdate) {
         saveUiSettings({ show_whats_new_after_update: false });
-        const toShow = (whatsNewData.releases as Release[]).slice(0, 1);
+        const toShow = ALL_RELEASES.slice(0, 1).filter(hasAnnouncementContent);
         if (toShow.length > 0) {
-          setReleases(toShow);
-          setOpen(true);
+          setAnnouncement({ kind: 'update', releases: toShow });
+          setHasUnseen(true);
         }
         return;
       }
 
       if (!lastSeen) {
-        setIsFreshInstall(true);
-        setOpen(true);
+        setAnnouncement({ kind: 'fresh-install' });
+        setHasUnseen(true);
         return;
       }
 
       if (lastSeen !== base) {
-        const newer = (whatsNewData.releases as Release[]).filter(
-          r => compareVersions(r.version, lastSeen) > 0
-        );
-        if (newer.length > 0) {
-          setReleases(newer);
-          setOpen(true);
+        const newer = ALL_RELEASES.filter(r => compareVersions(r.version, lastSeen) > 0);
+        const worthShowing = newer.filter(hasAnnouncementContent);
+        if (worthShowing.length > 0) {
+          setAnnouncement({ kind: 'update', releases: worthShowing });
+          setHasUnseen(true);
         } else {
           saveUiSettings({ last_seen_version: base });
         }
       }
     })();
-  }, []);
+  }, [setHasUnseen]);
 
-  const dismiss = useCallback(() => {
-    setOpen(false);
+  const acknowledge = useCallback(() => {
+    setAnnouncement(null);
+    setHasUnseen(false);
     if (baseVersion) {
       saveUiSettings({ last_seen_version: baseVersion, show_whats_new_after_update: false });
     }
-  }, [baseVersion]);
+  }, [baseVersion, setHasUnseen]);
 
-  return {
-    open,
-    isFreshInstall,
-    releases,
-    dismiss,
-    welcome: whatsNewData.welcome as WelcomeData,
-  };
+  return { announcement, acknowledge, baseVersion };
 }
 
-// ── Section accent colours ────────────────────────────────────────────────────
+// ── Spotlight: the "intriguing toast" that introduces a release once ─────────
+//
+// Lives in the bottom-right corner instead of stealing the centre of the
+// screen. A slow conic glow sweeps its border to draw the eye without being a
+// generic toast — clicking it opens the full changelog dialog.
 
-const SECTION_ACCENT: Record<string, { dot: string; badge: string; text: string }> = {
-  'New Features':  { dot: 'rgb(var(--common-accent))',   badge: 'rgba(var(--common-accent), 0.12)', text: 'rgb(var(--common-accent))' },
-  'Improvements':  { dot: '#22c55e',                    badge: 'rgba(34,197,94,0.12)',              text: '#22c55e' },
-  'Bug Fixes':     { dot: '#f97316',                    badge: 'rgba(249,115,22,0.12)',             text: '#f97316' },
+const SpotlightCard = ({
+  announcement,
+  onExpand,
+  onDismiss,
+}: {
+  announcement: Announcement;
+  onExpand: () => void;
+  onDismiss: () => void;
+}) => {
+  if (!announcement) return null;
+
+  const isFreshInstall = announcement.kind === 'fresh-install';
+  const latest = announcement.kind === 'update' ? announcement.releases[0] : undefined;
+  const teaserIcon = isFreshInstall ? WELCOME.items[0]?.emoji : latest?.whatsnew[0]?.icon;
+  const teaserTitle = isFreshInstall ? WELCOME.items[0]?.title : latest?.whatsnew[0]?.title;
+  const teaserDescription = isFreshInstall ? WELCOME.items[0]?.description : latest?.whatsnew[0]?.description;
+
+  return createPortal(
+    <motion.div
+      key="whats-new-spotlight"
+      initial={{ opacity: 0, y: 28, scale: 0.92 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 16, scale: 0.94, transition: { duration: 0.15 } }}
+      transition={{ type: 'spring', stiffness: 340, damping: 26, mass: 0.9, delay: 0.4 }}
+      className="fixed bottom-5 right-5 z-[10000] w-[320px]"
+    >
+      <div
+        className="relative rounded-2xl overflow-hidden cursor-pointer group bg-bg"
+        style={{
+          border: '1px solid rgba(var(--common-accent), 0.35)',
+          boxShadow: '0 12px 36px var(--ui-shadow, rgba(0, 0, 0, 0.3))',
+        }}
+        onClick={onExpand}
+      >
+        {/* Slim accent bar — a steady, theme-safe accent cue instead of a gradient wash */}
+        <div
+          aria-hidden
+          className="absolute inset-x-0 top-0 h-[2.5px]"
+          style={{ background: 'rgb(var(--common-accent))' }}
+        />
+
+        {/* Content */}
+        <div className="relative p-4">
+          <div className="flex items-start gap-3">
+            <motion.div
+              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{
+                background: 'rgba(var(--common-accent), 0.14)',
+                border: '1px solid rgba(var(--common-accent), 0.28)',
+              }}
+              animate={{
+                boxShadow: [
+                  '0 0 0px rgba(var(--common-accent), 0)',
+                  '0 0 14px rgba(var(--common-accent), 0.45)',
+                  '0 0 0px rgba(var(--common-accent), 0)',
+                ],
+              }}
+              transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <Sparkles className="w-4 h-4" style={{ color: 'rgb(var(--common-accent))' }} />
+            </motion.div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <p className="text-[12.5px] font-bold leading-tight text-text">
+                  {isFreshInstall ? 'Welcome to Voiden' : "What's new"}
+                </p>
+                {!isFreshInstall && latest && (
+                  <span
+                    className="inline-flex items-center text-[9px] font-mono font-bold px-1.5 py-0.5 rounded"
+                    style={{
+                      color: 'rgb(var(--common-accent))',
+                      background: 'rgba(var(--common-accent), 0.14)',
+                    }}
+                  >
+                    v{latest.version}
+                  </span>
+                )}
+              </div>
+              {teaserTitle && (
+                <p className="text-[11px] text-comment mt-1 leading-relaxed line-clamp-2">
+                  <span className="mr-1">{teaserIcon}</span>
+                  {teaserTitle} — {teaserDescription}
+                </p>
+              )}
+            </div>
+
+            <button
+              onClick={e => { e.stopPropagation(); onDismiss(); }}
+              className="text-comment hover:text-text transition-colors p-1 rounded-md hover:bg-active flex-shrink-0 -mr-1 -mt-1"
+            >
+              <X size={12} />
+            </button>
+          </div>
+
+          <div
+            className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold transition-colors"
+            style={{ color: 'rgb(var(--common-accent))' }}
+          >
+            <span>{isFreshInstall ? 'Take the tour' : 'See what changed'}</span>
+            <ArrowRight size={12} className="transition-transform group-hover:translate-x-0.5" />
+          </div>
+        </div>
+      </div>
+    </motion.div>,
+    document.body
+  );
 };
 
-function getSectionAccent(title: string) {
-  return SECTION_ACCENT[title] ?? SECTION_ACCENT['New Features'];
-}
+// ── Full changelog dialog ─────────────────────────────────────────────────────
 
-// ── Main component ────────────────────────────────────────────────────────────
-
-export const WhatsNewModal = () => {
-  const { open, isFreshInstall, releases, dismiss, welcome } = useWhatsNew();
-
+const WhatsNewDialog = ({
+  open,
+  isFreshInstall,
+  releases,
+  onClose,
+}: {
+  open: boolean;
+  isFreshInstall: boolean;
+  releases: Release[];
+  onClose: () => void;
+}) => {
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') dismiss(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [open, dismiss]);
+  }, [open, onClose]);
 
   const latestRelease = releases[0];
 
@@ -155,8 +282,8 @@ export const WhatsNewModal = () => {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           className="fixed inset-0 z-[10001] flex items-end sm:items-center justify-center p-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)' }}
-          onClick={dismiss}
+          style={{ backgroundColor: 'var(--ui-overlay-bg, rgba(0, 0, 0, 0.4))', backdropFilter: 'blur(3px)' }}
+          onClick={onClose}
         >
           <motion.div
             key="modal"
@@ -164,22 +291,13 @@ export const WhatsNewModal = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.96 }}
             transition={{ type: 'spring', stiffness: 380, damping: 26, mass: 0.9 }}
-            className="relative w-full flex flex-col overflow-hidden rounded-2xl border border-border shadow-2xl"
+            className="relative w-full flex flex-col overflow-hidden rounded-2xl border border-border shadow-2xl bg-bg"
             style={{
               maxWidth: 500,
               maxHeight: '88vh',
-              backgroundColor: 'var(--bg)',
             }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Subtle accent glow behind header */}
-            <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-32 opacity-30"
-              style={{
-                background: 'radial-gradient(ellipse 70% 80% at 50% -20%, rgba(var(--common-accent), 0.35), transparent)',
-              }}
-            />
-
             {/* ── Header ────────────────────────────────────────────────── */}
             <div className="relative z-10 flex items-start justify-between gap-3 px-6 pt-6 pb-5 flex-shrink-0">
               <div className="flex items-center gap-3.5">
@@ -196,15 +314,12 @@ export const WhatsNewModal = () => {
                 </div>
 
                 <div>
-                  <h2
-                    className="text-[15px] font-bold leading-tight tracking-tight"
-                    style={{ color: 'var(--text)' }}
-                  >
-                    {isFreshInstall ? welcome.headline : "What's New"}
+                  <h2 className="text-[15px] font-bold leading-tight tracking-tight text-text">
+                    {isFreshInstall ? WELCOME.headline : "What's New"}
                   </h2>
 
                   {isFreshInstall ? (
-                    <p className="text-xs text-comment mt-0.5">{welcome.subheadline}</p>
+                    <p className="text-xs text-comment mt-0.5">{WELCOME.subheadline}</p>
                   ) : latestRelease ? (
                     <div className="flex items-center gap-1.5 mt-1">
                       <span
@@ -225,7 +340,7 @@ export const WhatsNewModal = () => {
 
               {/* Close */}
               <button
-                onClick={dismiss}
+                onClick={onClose}
                 className="text-comment hover:text-text transition-colors p-1.5 rounded-lg hover:bg-active flex-shrink-0 mt-0.5"
               >
                 <X size={14} />
@@ -238,31 +353,10 @@ export const WhatsNewModal = () => {
             {/* ── Body ──────────────────────────────────────────────────── */}
             <div className="relative z-10 overflow-y-auto flex-1 px-5 py-5">
               {isFreshInstall ? (
-                <FreshInstallGrid items={welcome.items} />
+                <FreshInstallGrid items={WELCOME.items} />
               ) : (
                 <UpdateChangelog releases={releases} />
               )}
-            </div>
-
-            {/* ── Footer ────────────────────────────────────────────────── */}
-            <div
-              className="relative z-10 px-5 pb-5 pt-4 flex-shrink-0"
-              style={{ borderTop: '1px solid var(--border)' }}
-            >
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                onClick={dismiss}
-                className="w-full font-semibold py-2.5 rounded-xl text-sm transition-opacity"
-                style={{
-                  background: `linear-gradient(135deg, rgb(var(--common-accent)) 0%, rgba(var(--common-accent), 0.8) 100%)`,
-                  color: 'var(--bg)',
-                  boxShadow: '0 2px 12px rgba(var(--common-accent), 0.3)',
-                }}
-                onMouseOver={e => { (e.currentTarget as HTMLElement).style.opacity = '0.88'; }}
-                onMouseOut={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
-              >
-                Got it
-              </motion.button>
             </div>
           </motion.div>
         </motion.div>
@@ -272,9 +366,83 @@ export const WhatsNewModal = () => {
   );
 };
 
+// ── Orchestrator ──────────────────────────────────────────────────────────────
+//
+// Owns both surfaces: the once-only spotlight (auto-triggered on fresh install
+// or right after an update) and the full changelog dialog, which can also be
+// opened on demand from the "What's New" button in the top bar.
+
+export const WhatsNewModal = () => {
+  const { announcement, acknowledge } = useWhatsNewAnnouncement();
+  const openSignal = useWhatsNewStore(s => s.openSignal);
+  const isInitialOpenSignal = useRef(true);
+
+  const [spotlightVisible, setSpotlightVisible] = useState(false);
+  const [dialog, setDialog] = useState<{ open: boolean; isFreshInstall: boolean; releases: Release[] }>({
+    open: false,
+    isFreshInstall: false,
+    releases: [],
+  });
+
+  // Surface the spotlight once an announcement is resolved.
+  useEffect(() => {
+    setSpotlightVisible(!!announcement);
+  }, [announcement]);
+
+  // Manual trigger from the top bar — always shows the full release history.
+  useEffect(() => {
+    if (isInitialOpenSignal.current) {
+      isInitialOpenSignal.current = false;
+      return;
+    }
+    setSpotlightVisible(false);
+    setDialog({ open: true, isFreshInstall: false, releases: ALL_RELEASES });
+  }, [openSignal]);
+
+  const expandFromSpotlight = useCallback(() => {
+    if (!announcement) return;
+    setSpotlightVisible(false);
+    setDialog({
+      open: true,
+      isFreshInstall: announcement.kind === 'fresh-install',
+      releases: announcement.kind === 'update' ? announcement.releases : [],
+    });
+  }, [announcement]);
+
+  const dismissSpotlight = useCallback(() => {
+    setSpotlightVisible(false);
+    acknowledge();
+  }, [acknowledge]);
+
+  const closeDialog = useCallback(() => {
+    setDialog(d => ({ ...d, open: false }));
+    acknowledge();
+  }, [acknowledge]);
+
+  return (
+    <>
+      <AnimatePresence>
+        {spotlightVisible && (
+          <SpotlightCard
+            announcement={announcement}
+            onExpand={expandFromSpotlight}
+            onDismiss={dismissSpotlight}
+          />
+        )}
+      </AnimatePresence>
+      <WhatsNewDialog
+        open={dialog.open}
+        isFreshInstall={dialog.isFreshInstall}
+        releases={dialog.releases}
+        onClose={closeDialog}
+      />
+    </>
+  );
+};
+
 // ── Fresh install: 2×2 feature card grid ─────────────────────────────────────
 
-const FreshInstallGrid = ({ items }: { items: WhatsNewItem[] }) => (
+const FreshInstallGrid = ({ items }: { items: WelcomeItem[] }) => (
   <div className="grid grid-cols-2 gap-2.5">
     {items.map((item, i) => (
       <motion.div
@@ -289,8 +457,8 @@ const FreshInstallGrid = ({ items }: { items: WhatsNewItem[] }) => (
         }}
         whileHover={{
           boxShadow: '0 0 0 1px rgba(var(--common-accent), 0.3), 0 4px 20px rgba(var(--common-accent), 0.1)',
+          transition: { duration: 0.15 },
         }}
-        transition={{ duration: 0.15 } as any}
       >
         <div className="text-2xl mb-2.5 select-none">{item.emoji}</div>
         <p className="text-[13px] font-semibold text-text leading-snug">{item.title}</p>
@@ -300,69 +468,103 @@ const FreshInstallGrid = ({ items }: { items: WhatsNewItem[] }) => (
   </div>
 );
 
-// ── Update changelog ──────────────────────────────────────────────────────────
+// ── Update changelog: each entry is a card that expands for the full story ───
 
-const UpdateChangelog = ({ releases }: { releases: Release[] }) => (
-  <div className="space-y-5">
-    {releases.map((release, ri) => (
-      <div key={release.version} className="space-y-4">
-        {releases.length > 1 && ri > 0 && (
-          <div className="flex items-center gap-3 pt-1">
-            <span
-              className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded"
-              style={{
-                color: 'rgb(var(--common-accent))',
-                background: 'rgba(var(--common-accent), 0.12)',
-              }}
-            >
-              v{release.version}
-            </span>
-            <div className="h-px flex-1" style={{ background: 'var(--border)' }} />
-            <span className="text-[11px] text-comment">{release.date}</span>
-          </div>
-        )}
-        {release.sections.map((section, si) => {
-          const accent = getSectionAccent(section.title);
-          return (
-            <div key={section.title} className="space-y-0.5">
-              {/* Section header */}
-              <div className="flex items-center gap-2 px-1 mb-2">
-                <span
-                  className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: accent.dot }}
-                />
-                <span
-                  className="text-[10px] font-bold uppercase tracking-[0.1em]"
-                  style={{ color: accent.text }}
-                >
-                  {section.title}
-                </span>
-              </div>
-              {/* Items */}
-              {section.items.map((item, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: (si * 3 + i) * 0.055, type: 'spring', stiffness: 500, damping: 30 }}
-                  className="flex gap-3 px-3 py-2.5 rounded-lg cursor-default transition-colors hover:bg-active"
-                >
-                  <span className="text-[15px] leading-none mt-[1px] flex-shrink-0 select-none">
-                    {item.emoji}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-text leading-snug">{item.title}</p>
-                    <p className="text-[11px] text-comment mt-0.5 leading-relaxed">{item.description}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          );
-        })}
-        {ri < releases.length - 1 && (
-          <div className="h-px" style={{ background: 'var(--border)' }} />
+// Below this length the description already fits on two lines — no need to
+// offer an expand control for it.
+const DESCRIPTION_PREVIEW_THRESHOLD = 110;
+
+// Roughly two lines at the description's text size/line-height — the
+// collapsed state animates from this fixed height up to its natural height,
+// rather than snapping a `line-clamp` on/off (which is what caused the jump).
+const COLLAPSED_DESCRIPTION_HEIGHT = 32;
+
+const WhatsNewCard = ({
+  entry,
+  index,
+  expanded,
+  onToggle,
+}: {
+  entry: WhatsNewEntry;
+  index: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) => {
+  const isExpandable = entry.description.length > DESCRIPTION_PREVIEW_THRESHOLD;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.06, type: 'spring', stiffness: 500, damping: 30 }}
+      className={`rounded-lg px-3 py-2.5 transition-colors hover:bg-panel ${expanded ? 'bg-panel' : ''} ${isExpandable ? 'cursor-pointer' : 'cursor-default'}`}
+      onClick={() => isExpandable && onToggle()}
+    >
+      <div className="min-w-0">
+        <p className="text-[13px] font-semibold text-text leading-snug">{entry.title}</p>
+        <motion.div
+          initial={false}
+          animate={{ height: expanded || !isExpandable ? 'auto' : COLLAPSED_DESCRIPTION_HEIGHT }}
+          transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+          className="overflow-hidden mt-0.5"
+        >
+          <p className="text-[11px] text-comment leading-relaxed">{entry.description}</p>
+        </motion.div>
+        {isExpandable && (
+          <button
+            onClick={e => { e.stopPropagation(); onToggle(); }}
+            className="text-[10px] font-semibold mt-1 hover:opacity-80 transition-opacity"
+            style={{ color: 'rgb(var(--common-accent))' }}
+          >
+            {expanded ? 'Show less' : 'Show more'}
+          </button>
         )}
       </div>
-    ))}
-  </div>
-);
+    </motion.div>
+  );
+};
+
+const UpdateChangelog = ({ releases }: { releases: Release[] }) => {
+  // Only one card stays open at a time — tracked by a "version:index" key so
+  // it works across every release shown in the dialog, not just within one.
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-5">
+      {releases.map((release, ri) => (
+        <div key={release.version} className="space-y-1">
+          {releases.length > 1 && ri > 0 && (
+            <div className="flex items-center gap-3 pt-1 pb-2">
+              <span
+                className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded"
+                style={{
+                  color: 'rgb(var(--common-accent))',
+                  background: 'rgba(var(--common-accent), 0.12)',
+                }}
+              >
+                v{release.version}
+              </span>
+              <div className="h-px flex-1" style={{ background: 'var(--border)' }} />
+              <span className="text-[11px] text-comment">{release.date}</span>
+            </div>
+          )}
+          {release.whatsnew.map((entry, i) => {
+            const key = `${release.version}:${i}`;
+            return (
+              <WhatsNewCard
+                key={key}
+                entry={entry}
+                index={i}
+                expanded={expandedKey === key}
+                onToggle={() => setExpandedKey(k => (k === key ? null : key))}
+              />
+            );
+          })}
+          {ri < releases.length - 1 && (
+            <div className="h-px mt-4" style={{ background: 'var(--border)' }} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
