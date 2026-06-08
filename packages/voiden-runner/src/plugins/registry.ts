@@ -1,10 +1,13 @@
 /**
- * Plugin Registry
+ * Core Plugin Registry
  *
- * Derives the list of runner-capable core plugins from the static
- * core-plugins-registry.json — no dependency on @voiden/core-extensions.
+ * Derives the list of runner-capable core plugins from the same
+ * VoidenHQ/plugin-registry `extensions.json` that the Electron app reads
+ * (see registryCache.ts) — no separate static snapshot to keep in sync.
  *
- * Each core plugin that ships a runner.ts is built and released as
+ * A core plugin is runner-capable when the registry marks it `hasRunner: true`
+ * (set by plugin-registry maintainers when the plugin publishes a headless
+ * runner.js bundle). Each such plugin is built and released as
  * {pluginId}-runner.js in its own GitHub repo (VoidenHQ/plugin-{dir}).
  * voiden-runner downloads and caches these files the same way community
  * plugins do: ~/.voiden/extensions/{id}/runner.js
@@ -12,27 +15,9 @@
 
 import { join } from 'path'
 import { homedir } from 'os'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync } from 'fs'
 import { pathToFileURL } from 'url'
-import { createRequire } from 'module'
-
-// ─── Load static registry (no @voiden/core-extensions import) ─────────────────
-// Resolve relative to this file so it works from any cwd.
-const _require = createRequire(import.meta.url)
-
-// Try monorepo path first, then installed-package path
-function loadRegistry(): Record<string, any> {
-  const candidates = [
-    join(new URL('.', import.meta.url).pathname, '../../../../apps/electron/src/core-plugins-registry.json'),
-    join(homedir(), '.voiden', 'core-plugins-registry.json'),
-  ]
-  for (const p of candidates) {
-    if (existsSync(p)) return _require(p).plugins
-  }
-  return {}
-}
-
-const registryPlugins = loadRegistry()
+import { getRegistry, type RegistryEntry } from './registryCache.js'
 
 // ─── Runner paths (priority: bundled-at-build-time > user cache > download) ───
 const RUNNER_CACHE_DIR = join(homedir(), '.voiden', 'extensions')
@@ -58,6 +43,10 @@ export function hasCoreRunner(pluginId: string): boolean {
 }
 
 export function getCoreRunnerImportUrl(pluginId: string): string {
+  // User cache (~/.voiden/extensions) takes priority over the bundled snapshot —
+  // mirrors Electron's OTA-cache-over-bundled resolution (seedBundledPluginsToCache /
+  // isOtaCached) — so `plugin update` can actually supersede a bundled runner.
+  if (existsSync(getCoreRunnerPath(pluginId))) return pathToFileURL(getCoreRunnerPath(pluginId)).href
   const bundled = getBundledRunnerPath(pluginId)
   if (bundled) return pathToFileURL(bundled).href
   return pathToFileURL(getCoreRunnerPath(pluginId)).href
@@ -73,39 +62,36 @@ export interface PluginDefinition {
   repo: string
   /** Asset name in the GitHub release (e.g. 'voiden-rest-api-runner.js') */
   runnerAsset: string
+  /** Latest version published in the registry — used for update detection */
+  version: string
   /** Import URL — file:// path to cached runner.js, or undefined if not cached */
   pluginPath: string | undefined
 }
 
-// ─── IDs that have a headless runner in their individual repo ─────────────────
-const RUNNER_IDS = new Set([
-  'voiden-rest-api',
-  'voiden-graphql',
-  'voiden-sockets-grpcs',
-  'voiden-scripting',
-  'simple-assertions',
-  'voiden-faker',
-  'voiden-advanced-auth',
-])
-
-// ─── Derive plugin definitions from the static registry ───────────────────────
-
-export const CORE_PLUGINS: PluginDefinition[] = Object.values(registryPlugins)
-  .filter((p: any) => RUNNER_IDS.has(p.id))
-  .map((p: any) => ({
-    name:        p.id,
-    description: p.description,
-    repo:        p.repo,                                   // e.g. VoidenHQ/plugin-voiden-rest-api
-    runnerAsset: `${p.id}-runner.js`,
-    pluginPath:  hasCoreRunner(p.id)
-      ? getCoreRunnerImportUrl(p.id)
-      : undefined,
-  }))
-
-export function findPlugin(name: string): PluginDefinition | undefined {
-  return CORE_PLUGINS.find(p => p.name === name)
+function toPluginDefinition(entry: RegistryEntry): PluginDefinition {
+  return {
+    name: entry.id,
+    description: entry.description,
+    repo: entry.repo,
+    runnerAsset: entry.runnerAsset ?? `${entry.id}-runner.js`,
+    version: entry.version,
+    pluginPath: hasCoreRunner(entry.id) ? getCoreRunnerImportUrl(entry.id) : undefined,
+  }
 }
 
-export function listPluginNames(): string[] {
-  return CORE_PLUGINS.map(p => p.name)
+/** Core, runner-capable plugins — derived live from the plugin registry. */
+export async function getCorePlugins(): Promise<PluginDefinition[]> {
+  const entries = await getRegistry()
+  return entries
+    .filter((p) => p.type === 'core' && p.hasRunner)
+    .map(toPluginDefinition)
+}
+
+export async function findPlugin(name: string): Promise<PluginDefinition | undefined> {
+  const plugins = await getCorePlugins()
+  return plugins.find((p) => p.name === name)
+}
+
+export async function listPluginNames(): Promise<string[]> {
+  return (await getCorePlugins()).map((p) => p.name)
 }

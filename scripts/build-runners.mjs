@@ -11,7 +11,7 @@
  *   node scripts/build-runners.mjs voiden-rest-api   # build one plugin
  */
 
-import { readdirSync, existsSync, readFileSync, statSync, mkdirSync, copyFileSync } from 'fs'
+import { readdirSync, existsSync, readFileSync, statSync, mkdirSync, copyFileSync, writeFileSync } from 'fs'
 import { resolve, join } from 'path'
 import { fileURLToPath } from 'url'
 import { spawnSync } from 'child_process'
@@ -21,6 +21,12 @@ const pluginsDir = resolve(__dirname, '../plugins')
 const outDir = resolve(__dirname, '../packages/voiden-runner/bundled-runners')
 
 mkdirSync(outDir, { recursive: true })
+
+// The runner bundles are esbuild-compiled CJS, but this directory inherits
+// `"type": "module"` from packages/voiden-runner/package.json — without this
+// override, Node's native ESM loader rejects them with "module is not defined
+// in ES module scope".
+writeFileSync(join(outDir, 'package.json'), JSON.stringify({ type: 'commonjs' }, null, 2) + '\n')
 
 if (!existsSync(pluginsDir)) {
   console.error('plugins/ directory not found. Run: bash cleanup.sh first to clone plugin repos.')
