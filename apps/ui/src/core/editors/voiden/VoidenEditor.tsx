@@ -268,6 +268,34 @@ export const reloadVoidenEditor = async (tabId: string) => {
   }
 };
 
+// ── Self-save suppression ─────────────────────────────────────────────────────
+// When Voiden writes a .void file to disk, the OS file watcher fires apy:changed
+// for that path. Without suppression, the handler reloads the editor even when
+// the user has already typed new content since the save (the unsaved debounce
+// may not have fired yet, so isDirty looks false). We track each self-write and
+// consume one "ignore token" per apy:changed event to prevent the bounce-back.
+const selfSavedPathCounts = new Map<string, number>();
+
+export const registerSelfSave = (path: string): void => {
+  const norm = path.replace(/\\/g, "/");
+  selfSavedPathCounts.set(norm, (selfSavedPathCounts.get(norm) ?? 0) + 1);
+  // Safety valve: auto-clear after 5s if the watcher event never arrives
+  setTimeout(() => {
+    const n = selfSavedPathCounts.get(norm) ?? 0;
+    if (n <= 1) selfSavedPathCounts.delete(norm);
+    else selfSavedPathCounts.set(norm, n - 1);
+  }, 5000);
+};
+
+export const consumeSelfSave = (path: string): boolean => {
+  const norm = path.replace(/\\/g, "/");
+  const n = selfSavedPathCounts.get(norm) ?? 0;
+  if (n <= 0) return false;
+  if (n === 1) selfSavedPathCounts.delete(norm);
+  else selfSavedPathCounts.set(norm, n - 1);
+  return true;
+};
+
 const VoidenEditorInner = ({
   tabId,
   content,

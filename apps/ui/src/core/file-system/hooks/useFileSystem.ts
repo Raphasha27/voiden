@@ -3,7 +3,7 @@ import { FileTree, FileTreeItem, TabState } from "@/types";
 import { useDocumentStore } from "../stores/fileSystemStore";
 import { useGetAppState } from "@/core/state/hooks";
 import { getQueryClient } from "@/main";
-import { useEditorStore, useVoidenEditorStore } from "@/core/editors/voiden/VoidenEditor";
+import { useEditorStore, useVoidenEditorStore, registerSelfSave } from "@/core/editors/voiden/VoidenEditor";
 import { voidenExtensions } from "@/core/editors/voiden/extensions";
 import { addVersionFrontmatter, createMarkdownSerializer } from "@/core/editors/voiden/markdownConverter";
 import { Schema } from "@tiptap/pm/model";
@@ -114,8 +114,19 @@ export const saveFileUtil = async (path: string | null, content: string, panelId
     return;
   }
   const markdown = prosemirrorToMarkdown(content, schema);
+
+  // Register BEFORE the IPC write so the token is already in place when the
+  // file-watcher fires apy:changed. On slow machines the watcher event can
+  // arrive at the renderer before the files.write() response does, causing a
+  // false reload. For new files (path null) we register after since we don't
+  // know the path yet; the 5s auto-expiry cleans up if the watcher never fires.
+  if (path) registerSelfSave(path);
+
   const filePath = await window.electron?.files.write(path, markdown, tabId);
   if (!filePath) return;
+
+  // For new (previously unsaved) files, register now that we have the real path.
+  if (!path) registerSelfSave(filePath);
 
   invalidateOnFileSave(filePath, panelId, tabId);
 
