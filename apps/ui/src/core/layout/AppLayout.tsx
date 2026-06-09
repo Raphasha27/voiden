@@ -448,9 +448,9 @@ export const AppLayout = () => {
         <PanelGroup direction="horizontal" autoSaveId="persist-1">
           {/* Left Sidebar - File Browser */}
           <Panel {...leftPanelProps}>
-            <div className="h-full border-border bg-bg">
+            <div className="h-full border-border bg-bg overflow-hidden">
               <SidePanelTabs side="left" />
-              <div className="h-[calc(100%-2rem)]">
+              <div className="h-[calc(100%-2rem)] overflow-hidden">
                 <SidePanelContent side="left" />
               </div>
             </div>
