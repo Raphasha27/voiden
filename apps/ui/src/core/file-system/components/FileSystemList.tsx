@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NodeApi, Tree, TreeApi } from "react-arborist";
+import { fileTreeDndManager } from "@/core/file-system/components/FileSystemList/dndManager";
 import { Loader } from "lucide-react";
 import useResizeObserver from "use-resize-observer";
 import { useQueryClient } from "@tanstack/react-query";
@@ -886,6 +887,7 @@ export const FileSystemList = () => {
             >
               {treeData && (
                 <Tree
+                  dndManager={fileTreeDndManager}
                   dndRootElement={dndRootElement.current}
                   ref={treeRef}
                   data={treeData}

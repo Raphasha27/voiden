@@ -1,5 +1,30 @@
 [
   {
+    "version": "v2.0.1",
+    "date": "8/6/2026",
+    "title": "Stable: Plugin Architecture Overhaul",
+    "description": "Stable release rolling up the v2.0.0-beta.1 and v2.0.1-beta.1 betas — a major rework of the plugin architecture (protocol logic moved into plugins, independent plugin repos, the new voiden-runner CLI and @voiden/create-plugin scaffolding tool) plus a batch of bug fixes.",
+    "icon": "Sparkles",
+    "iconColor": "text-violet-400",
+    "bgColor": "bg-gradient-to-br from-violet-900 to-slate-900",
+    "changes": {
+      "Added": [
+        "voiden-runner — standalone CLI package (@voiden/runner) for executing .void files from the terminal without the desktop app",
+        "@voiden/create-plugin — scaffold a Voiden plugin workspace with a single command"
+      ],
+      "Improved": [
+        "Core request engine reworked to be protocol-agnostic — REST, WebSocket, and gRPC logic now lives entirely within each plugin",
+        "Core plugins moved into independent repositories for cleaner versioning, isolated releases, and easier community contribution",
+        "Plugin install and update flow — clearer status indicators and more reliable update detection in the extension manager",
+        "@voiden/sdk expanded with top bar buttons, help panel commands, declarative settings fields, a project file system API, and a manifest-based permission system for plugins"
+      ],
+      "Fixed": [
+        "Large integers (e.g. 64-bit IDs) no longer get rounded or corrupted in the response viewer and runtime variables",
+        "\"Add File\" button no longer gets hidden when multiple cURL blocks are present in a request"
+      ]
+    }
+  },
+  {
     "version": "v2.0.1-beta.1",
     "date": "3/6/2026",
     "title": "Plugin Independence, create-plugin & File Search",
