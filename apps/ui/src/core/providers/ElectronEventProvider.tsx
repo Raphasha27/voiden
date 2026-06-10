@@ -4,7 +4,6 @@ import { EventEmitter } from "events";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { globalSaveFile, saveTabById } from "@/core/file-system/hooks";
-import { reloadVoidenEditor, useEditorStore, consumeSelfSave } from "@/core/editors/voiden/VoidenEditor";
 import { useLoadEnv, useSetActiveEnv } from "@/core/environment/hooks";
 import { toast } from "@/core/components/ui/sonner";
 import { useFocusStore } from "@/core/stores/focusStore";
@@ -195,35 +194,7 @@ export const ElectronEventProvider: React.FC<{ children: React.ReactNode }> = ({
 
         if (!changedPath) return;
 
-        // If this editor session just wrote this file, skip the reload and the
-        // event emission entirely. The token is registered BEFORE the IPC write
-        // completes so it's always present when this handler fires.
-        if (consumeSelfSave(changedPath)) return;
-
         handleEvent("apy:changed", data);
-
-        const panelQueries = queryClient.getQueriesData<any>({ queryKey: ["panel:tabs"] });
-        for (const [, panelData] of panelQueries) {
-          for (const tab of panelData?.tabs ?? []) {
-            if (tab.source?.replace(/\\/g, "/") !== changedPath) continue;
-            const isDirty = !!useEditorStore.getState().unsaved[tab.id];
-            if (isDirty) {
-              toast.warning(`${tab.title} was modified on disk`, {
-                description: "You have unsaved changes. Overwrite with disk version?",
-                action: {
-                  label: "Overwrite",
-                  onClick: () => {
-                    const forceReload = useEditorStore.getState().forceReloadFunctions[tab.id];
-                    if (forceReload) forceReload();
-                  },
-                },
-                duration: 10000,
-              });
-            } else {
-              reloadVoidenEditor(tab.id);
-            }
-          }
-        }
       },
       "file:delete-complete":(_event: any, data: any) => {
         handleEvent("file:delete-complete", data);
