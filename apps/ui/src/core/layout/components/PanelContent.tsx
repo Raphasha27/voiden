@@ -721,6 +721,11 @@ const PanelContentInner = ({ panelId }: { panelId: string }) => {
   }
 
   if (tabContent.type === "custom") {
+    editorActions.forEach((action) => {
+      if (action && action.predicate) {
+        action.predicate({ title: '' });
+      }
+    });
     const tab = panel?.find((tab) => tab.id === tabContent.customTabKey);
     const Component = tab?.content || tab?.component;
 
