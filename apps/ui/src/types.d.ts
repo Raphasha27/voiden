@@ -64,6 +64,10 @@ declare global {
       ) => Promise<Response>;
       connectWss: (wsId: string) => Promise<void>;
       getVersion: () => Promise<string>;
+      checkForUpdates: (channel: "stable" | "early-access") => Promise<{ available: boolean; version?: string }>;
+      onUpdateProgress: (callback: (progress: { percent?: number; bytesPerSecond?: number; transferred?: number; total?: number; status: string }) => void) => () => void;
+      readUpdaterLog: () => Promise<string>;
+      getUpdaterLogPath: () => Promise<string>;
       mainwindow: {
         minimize: () => void;
         maximize: () => void;
@@ -413,6 +417,7 @@ declare global {
         set: (patch: any) => Promise<any>;
         reset: () => Promise<any>;
         onChange: (callback: void) => Promise<any>;
+        toggleEarlyAccess: (enable: boolean) => Promise<void>;
       };
       pluginSettings: {
         get: (pluginId: string, key: string) => Promise<unknown>;
