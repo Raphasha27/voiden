@@ -10,6 +10,8 @@ export interface InstalledPlugin {
   name: string
   enabled: boolean
   installedAt: string
+  /** Runner bundle version that was downloaded — compared against the registry to detect updates */
+  version?: string
 }
 
 export interface PluginStore {
@@ -37,7 +39,7 @@ function writeStore(store: PluginStore): void {
   writeFileSync(STORE_PATH, JSON.stringify(store, null, 2) + '\n', 'utf-8')
 }
 
-export function installPlugin(name: string): boolean {
+export function installPlugin(name: string, version?: string): boolean {
   const store = readStore()
   const alreadyInstalled = !!store.installedPlugins[name]
   if (!alreadyInstalled) {
@@ -45,10 +47,31 @@ export function installPlugin(name: string): boolean {
       name,
       enabled: true,
       installedAt: new Date().toISOString(),
+      version,
     }
     writeStore(store)
   }
   return !alreadyInstalled
+}
+
+/** Records the runner bundle version for an installed plugin (used by `plugin update`). */
+export function setPluginVersion(name: string, version: string): void {
+  const store = readStore()
+  if (!store.installedPlugins[name]) {
+    store.installedPlugins[name] = {
+      name,
+      enabled: true,
+      installedAt: new Date().toISOString(),
+      version,
+    }
+  } else {
+    store.installedPlugins[name].version = version
+  }
+  writeStore(store)
+}
+
+export function getInstalledVersion(name: string): string | undefined {
+  return readStore().installedPlugins[name]?.version
 }
 
 export function uninstallPlugin(name: string): boolean {

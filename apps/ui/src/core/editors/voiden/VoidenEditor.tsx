@@ -220,6 +220,9 @@ interface EditorStore {
   forceReloadFunctions: Record<string, () => Promise<void>>;
   registerForceReload: (tabId: string, fn: () => Promise<void>) => void;
   unregisterForceReload: (tabId: string) => void;
+  focusedTabIds: Set<string>;
+  setEditorFocused: (tabId: string) => void;
+  setEditorBlurred: (tabId: string) => void;
 }
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
@@ -258,6 +261,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const { [tabId]: _, ...rest } = state.forceReloadFunctions;
       return { forceReloadFunctions: rest };
     }),
+  focusedTabIds: new Set(),
+  setEditorFocused: (tabId) =>
+    set((state) => { const s = new Set(state.focusedTabIds); s.add(tabId); return { focusedTabIds: s }; }),
+  setEditorBlurred: (tabId) =>
+    set((state) => { const s = new Set(state.focusedTabIds); s.delete(tabId); return { focusedTabIds: s }; }),
 }));
 
 // Helper function to reload a specific tab
@@ -266,6 +274,34 @@ export const reloadVoidenEditor = async (tabId: string) => {
   if (reloadFn) {
     await reloadFn();
   }
+};
+
+// ── Self-save suppression ─────────────────────────────────────────────────────
+// When Voiden writes a .void file to disk, the OS file watcher fires apy:changed
+// for that path. Without suppression, the handler reloads the editor even when
+// the user has already typed new content since the save (the unsaved debounce
+// may not have fired yet, so isDirty looks false). We track each self-write and
+// consume one "ignore token" per apy:changed event to prevent the bounce-back.
+const selfSavedPathCounts = new Map<string, number>();
+
+export const registerSelfSave = (path: string): void => {
+  const norm = path.replace(/\\/g, "/");
+  selfSavedPathCounts.set(norm, (selfSavedPathCounts.get(norm) ?? 0) + 1);
+  // Safety valve: auto-clear after 5s if the watcher event never arrives
+  setTimeout(() => {
+    const n = selfSavedPathCounts.get(norm) ?? 0;
+    if (n <= 1) selfSavedPathCounts.delete(norm);
+    else selfSavedPathCounts.set(norm, n - 1);
+  }, 5000);
+};
+
+export const consumeSelfSave = (path: string): boolean => {
+  const norm = path.replace(/\\/g, "/");
+  const n = selfSavedPathCounts.get(norm) ?? 0;
+  if (n <= 0) return false;
+  if (n === 1) selfSavedPathCounts.delete(norm);
+  else selfSavedPathCounts.set(norm, n - 1);
+  return true;
 };
 
 const VoidenEditorInner = ({
@@ -803,6 +839,8 @@ const VoidenEditorInner = ({
       },
       onCreate: handleEditorCreate,
       onUpdate: handleEditorUpdate,
+      onFocus: () => useEditorStore.getState().setEditorFocused(tabId),
+      onBlur: () => useEditorStore.getState().setEditorBlurred(tabId),
       extensions: [...finalExtensions, FindHighlightExtension, SectionIndicatorExtension],
       immediatelyRender: true,
       shouldRerenderOnTransaction: false,
@@ -826,13 +864,14 @@ const VoidenEditorInner = ({
     };
   }, [editor]);
 
-  // Clean up debounce timers on unmount
+  // Clean up debounce timers and focus state on unmount
   useEffect(() => {
     return () => {
       if (updateTimerRef.current !== null) clearTimeout(updateTimerRef.current);
       if (autoSaveTimerRef.current !== null) clearTimeout(autoSaveTimerRef.current);
+      useEditorStore.getState().setEditorBlurred(tabId);
     };
-  }, []);
+  }, [tabId]);
 
   // Separate effect for environment changes - debounced to avoid conflicts during modal unmount
   const [debouncedActiveEnvKey, setDebouncedActiveEnvKey] = useState(activeEnvKey);
@@ -920,40 +959,6 @@ const VoidenEditorInner = ({
   // Fallback: if full value maps are unavailable, keep validity highlighting via keys-only lists.
   const { data: envKeys } = useEnvironmentKeys();
   const { data: voidVariableKeys } = useVoidVariables();
-  // When user activates a clean tab, compare editor content vs disk and reload if different.
-  useEffect(() => {
-    if (!editor || !isActive || !source) return;
-    if (useEditorStore.getState().unsaved[tabId]) return;
-    let cancelled = false;
-    window.electron?.files.read(source).then((diskContent) => {
-      if (cancelled || !diskContent) return;
-      if (useEditorStore.getState().unsaved[tabId]) return;
-      try {
-        const parsed = parseMarkdown(diskContent, memoizedSchema);
-        const sanitized = sanitizeDoc(parsed);
-        const diskJSON = JSON.stringify(sanitized);
-        // Compare against savedContentJSONRef (also a parsed-markdown output) rather than
-        // editor.getJSON() which includes uid attributes added by UniqueID — those never
-        // appear in parseMarkdown output so the comparison was always unequal, causing
-        // setContent (and a cursor reset) to fire on every tab activation.
-        if (diskJSON !== savedContentJSONRef.current) {
-          const preserved = preserveUnknownNodesInJSON(sanitized, memoizedSchema);
-          console.log('[VoidenEditor] setContent — tab activation: disk differs from savedContentJSONRef, reloading', { tabId, source });
-          editor.commands.setContent(preserved, false);
-          if (!editor.isDestroyed) {
-            editor.view.dispatch(
-              editor.view.state.tr
-                .setMeta("forceHighlightUpdate", true)
-                .setMeta("forceVariableHighlightUpdate", true)
-            );
-          }
-        }
-      } catch {
-        // ignore parse errors
-      }
-    });
-    return () => { cancelled = true; };
-  }, [isActive]);
 
   const queryClient = useQueryClient();
 

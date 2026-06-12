@@ -39,6 +39,8 @@ export interface SearchResult {
   line: number;
   col: number;
   preview: string;
+  colInPreview: number;
+  matchLength: number;
 }
 
 export {};
@@ -62,6 +64,10 @@ declare global {
       ) => Promise<Response>;
       connectWss: (wsId: string) => Promise<void>;
       getVersion: () => Promise<string>;
+      checkForUpdates: (channel: "stable" | "early-access") => Promise<{ available: boolean; version?: string }>;
+      onUpdateProgress: (callback: (progress: { percent?: number; bytesPerSecond?: number; transferred?: number; total?: number; status: string }) => void) => () => void;
+      readUpdaterLog: () => Promise<string>;
+      getUpdaterLogPath: () => Promise<string>;
       mainwindow: {
         minimize: () => void;
         maximize: () => void;
@@ -197,6 +203,9 @@ declare global {
       };
       startSearch: (args: { query: string; matchCase: boolean; matchWholeWord: boolean; useRegex: boolean; useMultiline: boolean; searchId: number; fileMask?: string; dirMask?: string; includeHidden?: boolean }) => void;
       cancelSearch: (searchId: number) => void;
+      replaceMatch: (args: { path: string; line: number; col: number; query: string; replacement: string; matchCase: boolean; matchWholeWord: boolean; useRegex: boolean; useMultiline: boolean }) => Promise<{ success: boolean; updatedPaths: string[]; replacement?: string; error?: string }>;
+      replaceInFiles: (args: { query: string; replacement: string; matchCase: boolean; matchWholeWord: boolean; useRegex: boolean; useMultiline: boolean; paths: string[] }) => Promise<{ replacedCount: number; updatedPaths: string[]; replacements?: Record<string, string[]>; error?: string }>;
+      searchInFile: (args: { path: string; query: string; matchCase: boolean; matchWholeWord: boolean; useRegex: boolean; useMultiline: boolean }) => Promise<{ results: SearchResult[] }>;
       listDirs: (parent?: string) => Promise<string[]>;
       onSearchResult: (cb: (data: { searchId: number; result: SearchResult }) => void) => () => void;
       onSearchDone: (cb: (data: { searchId: number; error?: string }) => void) => () => void;
@@ -398,6 +407,7 @@ declare global {
         setActiveProfile: (profile: string) => Promise<void>;
         createProfile: (profile: string) => Promise<void>;
         deleteProfile: (profile: string) => Promise<void>;
+        renameProfile: (oldName: string, newName: string) => Promise<void>;
       };
       fileLink: {
         exists: (absolutePath: string) => Promise<boolean>;
@@ -407,6 +417,7 @@ declare global {
         set: (patch: any) => Promise<any>;
         reset: () => Promise<any>;
         onChange: (callback: void) => Promise<any>;
+        toggleEarlyAccess: (enable: boolean) => Promise<void>;
       };
       pluginSettings: {
         get: (pluginId: string, key: string) => Promise<unknown>;

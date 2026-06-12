@@ -15,7 +15,7 @@
  */
 
 import { requestOrchestrator, hookRegistry } from '@voiden/executors'
-import { CORE_PLUGINS, hasCoreRunner, getCoreRunnerImportUrl, getCoreRunnerPath } from './registry.js'
+import { getCorePlugins, hasCoreRunner, getCoreRunnerImportUrl, getCoreRunnerPath } from './registry.js'
 import {
   fetchCommunityPlugins,
   findCommunityPlugin,
@@ -24,19 +24,23 @@ import {
 } from './community.js'
 import { createHeadlessPluginContext } from '../headlessContext.js'
 import { clearSchemas } from '../blockSchemaRegistry.js'
-import { readStore } from './store.js'
-import { findPlugin } from './registry.js'
+import { readStore, setPluginVersion } from './store.js'
 import * as https from 'https'
 import { mkdirSync, createWriteStream, existsSync } from 'fs'
 import { dirname } from 'path'
 
-/** Download a core plugin runner bundle from its GitHub repo release. */
-async function downloadCoreRunner(pluginId: string, repo: string, assetName: string, verbose: boolean): Promise<boolean> {
+/**
+ * Download a core plugin runner bundle from its GitHub repo release, pinned to
+ * the version published in the registry — mirrors the Electron app's
+ * `getExtensionFiles` (which fetches `releases/tags/v{version}`), so the
+ * version we record locally always matches what we actually downloaded and
+ * `plugin update` can detect drift against the registry.
+ */
+export async function downloadCoreRunner(pluginId: string, repo: string, assetName: string, version: string, verbose: boolean): Promise<boolean> {
   const destPath = getCoreRunnerPath(pluginId)
   mkdirSync(dirname(destPath), { recursive: true })
 
-  // Fetch latest release metadata from GitHub API
-  const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`
+  const apiUrl = `https://api.github.com/repos/${repo}/releases/tags/v${version}`
   const meta: any = await new Promise((resolve, reject) => {
     https.get(apiUrl, { headers: { 'User-Agent': 'voiden-runner', 'Accept': 'application/vnd.github+json' } }, res => {
       let data = ''
@@ -49,7 +53,7 @@ async function downloadCoreRunner(pluginId: string, repo: string, assetName: str
 
   const asset = (meta.assets ?? []).find((a: any) => a.name === assetName)
   if (!asset) {
-    if (verbose) console.warn(`  [plugins] No "${assetName}" asset in latest release of ${repo}`)
+    if (verbose) console.warn(`  [plugins] No "${assetName}" asset in release v${version} of ${repo}`)
     return false
   }
 
@@ -62,7 +66,8 @@ async function downloadCoreRunner(pluginId: string, repo: string, assetName: str
     }).on('error', reject)
   })
 
-  if (verbose) console.log(`  [plugins] Downloaded ${assetName} → ${destPath}`)
+  setPluginVersion(pluginId, version)
+  if (verbose) console.log(`  [plugins] Downloaded ${assetName}@${version} → ${destPath}`)
   return true
 }
 
@@ -91,8 +96,20 @@ async function loadPlugin(
 ): Promise<boolean> {
   try {
     const mod = await import(pluginPath)
-    const factory: ((ctx: any) => { onload: () => void | Promise<void> }) | undefined =
-      mod.default ?? mod
+    // Runner bundles are esbuild-compiled CJS (`export default factory` →
+    // `module.exports = { __esModule: true, default: factory }`). Node's native
+    // ESM loader then wraps that whole CJS object as `mod.default`, so the real
+    // factory ends up nested at `mod.default.default`. Unwrap until we hit a
+    // function or run out of `__esModule`-marked layers.
+    let factory: unknown = mod.default ?? mod
+    while (
+      factory &&
+      typeof factory === 'object' &&
+      (factory as any).__esModule &&
+      'default' in (factory as any)
+    ) {
+      factory = (factory as any).default
+    }
 
     if (typeof factory !== 'function') {
       if (verbose) {
@@ -131,7 +148,8 @@ export async function loadEnabledPlugins(
   // ── Core plugins ──────────────────────────────────────────────────────────
   // Core plugins default to enabled but can be disabled via ~/.voiden/plugins.json.
   // Runner bundles are downloaded on-demand from each plugin's GitHub repo.
-  for (const def of CORE_PLUGINS) {
+  const corePlugins = await getCorePlugins()
+  for (const def of corePlugins) {
     if (skipPlugins.has(def.name)) {
       if (verbose) console.log(`  [plugins] Skipping plugin (--no-scripts): ${def.name}`)
       continue
@@ -144,7 +162,7 @@ export async function loadEnabledPlugins(
     // Auto-download runner bundle if not cached locally
     if (!hasCoreRunner(def.name)) {
       if (verbose) console.log(`  [plugins] Downloading runner for ${def.name} from ${def.repo}...`)
-      await downloadCoreRunner(def.name, def.repo, def.runnerAsset, verbose)
+      await downloadCoreRunner(def.name, def.repo, def.runnerAsset, def.version, verbose)
     }
 
     if (!hasCoreRunner(def.name)) {
@@ -167,12 +185,13 @@ export async function loadEnabledPlugins(
     communityPlugins = []
   }
 
+  const corePluginNames = new Set(corePlugins.map((p) => p.name))
   const store = readStore()
   for (const [name, record] of Object.entries(store.installedPlugins)) {
     if (!isCommunityPluginEnabled(name)) continue
 
     // Skip if it's a core plugin (already handled above)
-    if (findPlugin(name)) continue
+    if (corePluginNames.has(name)) continue
 
     const commDef = findCommunityPlugin(name, communityPlugins)
     if (!commDef) {

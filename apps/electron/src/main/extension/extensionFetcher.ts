@@ -63,10 +63,19 @@ export async function fetchReadme(repo: string): Promise<string> {
 }
 
 export async function fetchManifest(repo: string): Promise<Record<string, any> | null> {
+  // Try GitHub release first; fall back to raw branch file for plugins without a release yet.
   try {
     const raw = await httpsGet(`https://github.com/${repo}/releases/latest/download/manifest.json`);
     return JSON.parse(raw);
   } catch {
+    for (const branch of ['main', 'master']) {
+      try {
+        const raw = await httpsGet(`https://raw.githubusercontent.com/${repo}/${branch}/manifest.json`);
+        return JSON.parse(raw);
+      } catch {
+        // try next branch
+      }
+    }
     return null;
   }
 }

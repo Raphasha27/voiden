@@ -8,6 +8,7 @@ import { useSaveYamlEnvironments } from "@/core/environment/hooks";
 import { useProfiles } from "../hooks/useProfiles.ts";
 import { useCreateProfile } from "@/core/environment/hooks";
 import { useDeleteProfile } from "@/core/environment/hooks";
+import { useRenameProfile } from "@/core/environment/hooks";
 import type { EditableEnvNode, EditableVariable } from "./EnvironmentNode";
 import {
   type EditableEnvTree,
@@ -18,6 +19,7 @@ import {
   renameKey,
 } from "./envTreeUtils";
 import { useEditorStore } from "@/core/editors/voiden/VoidenEditor";
+import { toast } from "@/core/components/ui/sonner";
 import { useGetAppState } from "@/core/state/hooks";
 
 const DEBOUNCE_MS = 800;
@@ -728,7 +730,7 @@ const RuntimePanel = ({
 }: {
   vars: Record<string, any>;
   onRefresh: () => void;
-  onDelete: (key: string) => void;
+  onDelete: (key: string) => Promise<boolean>;
   selectedKeys: Set<string>;
   onSelectionChange: (keys: Set<string>) => void;
 }) => {
@@ -750,10 +752,28 @@ const RuntimePanel = ({
   const allSelected = entries.length > 0 && entries.every(([k]) => selectedKeys.has(k));
   const toggleAll = () =>
     onSelectionChange(allSelected ? new Set() : new Set(entries.map(([k]) => k)));
-  const handleBulkDelete = () => {
-    selectedKeys.forEach((k) => onDelete(k));
-    onSelectionChange(new Set());
+  const handleBulkDelete = async () => {
+    const keys = Array.from(selectedKeys);
     setConfirmBulkDelete(false);
+
+    const results = await Promise.all(keys.map(async (k) => ({ key: k, ok: await onDelete(k) })));
+    const failed = results.filter((r) => !r.ok).map((r) => r.key);
+    const succeededCount = results.length - failed.length;
+
+    // Keep failed keys selected so the user can see and retry them.
+    onSelectionChange(new Set(failed));
+
+    if (failed.length === 0) {
+      toast.success(`Deleted ${succeededCount} variable${succeededCount === 1 ? "" : "s"}`);
+    } else if (succeededCount === 0) {
+      toast.error(`Couldn't delete ${failed.length} variable${failed.length === 1 ? "" : "s"}`, {
+        description: failed.join(", "),
+      });
+    } else {
+      toast.warning(`Deleted ${succeededCount} of ${keys.length} variables`, {
+        description: `Couldn't delete: ${failed.join(", ")}`,
+      });
+    }
   };
 
   return (
@@ -1010,6 +1030,34 @@ export const EnvironmentEditor = ({ tabId }: { tabId: string }) => {
   const profileParam = selectedProfile === "default" ? undefined : selectedProfile;
   const { data, isLoading } = useYamlEnvironments(profileParam);
   const { mutate: save } = useSaveYamlEnvironments(profileParam);
+  const { data: profiles } = useProfiles();
+  const { mutate: renameProfile } = useRenameProfile();
+  const [editingProfileName, setEditingProfileName] = useState(false);
+  const [profileNameValue, setProfileNameValue] = useState("");
+  const [profileNameError, setProfileNameError] = useState<string | null>(null);
+  const profileNameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (editingProfileName) profileNameInputRef.current?.focus(); }, [editingProfileName]);
+
+  const handleProfileRenameCommit = () => {
+    const t = profileNameValue.trim();
+    if (!t || t === selectedProfile) { setEditingProfileName(false); setProfileNameError(null); return; }
+    if (!PROFILE_NAME_REGEX.test(t)) { setProfileNameError("Lowercase letters, numbers, hyphens only"); return; }
+    if (t === "default" || (profiles?.includes(t) && t !== selectedProfile)) { setProfileNameError("Profile already exists"); return; }
+    renameProfile({ oldName: selectedProfile, newName: t }, {
+      onSuccess: () => {
+        // Seed the new profile's cache key with existing data so useYamlEnvironments
+        // finds it immediately and skips the loading state (no flicker).
+        const existing = queryClient.getQueryData(["yaml-environments", activeProject, selectedProfile]);
+        if (existing) {
+          queryClient.setQueryData(["yaml-environments", activeProject, t], existing);
+        }
+        setSelectedProfile(t);
+        setEditingProfileName(false);
+        setProfileNameError(null);
+      },
+    });
+  };
 
   const [tree, setTree] = useState<EditableEnvTree>({});
   const [selectedEnvPath, setSelectedEnvPath] = useState<string | null>(null);
@@ -1272,15 +1320,25 @@ export const EnvironmentEditor = ({ tabId }: { tabId: string }) => {
     handleUpdateTree(updateNodeAtPath(tree, selectedEnvPath, updated));
   }, [selectedEnvPath, tree, handleUpdateTree]);
 
-  // Delete a single runtime variable from the selected env bucket
-  const handleDeleteRuntimeVar = async (key: string) => {
+  // Delete a single runtime variable from the selected env bucket.
+  // Returns whether the delete actually succeeded so bulk delete can report
+  // partial failures back to the user.
+  const handleDeleteRuntimeVar = async (key: string): Promise<boolean> => {
+    const envKey = selectedEnvPath || "__global__";
+    try {
+      await (window as any).electron?.variables?.deleteKey?.(key, envKey);
+    } catch (error) {
+      toast.error(`Couldn't delete "${key}"`, {
+        description: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
     setRuntimeVars((prev) => {
       const updated = { ...prev };
       delete updated[key];
       return updated;
     });
-    const envKey = selectedEnvPath || "__global__";
-    await (window as any).electron?.variables?.deleteKey?.(key, envKey);
+    return true;
   };
 
   // Clear all runtime variables for the currently viewed bucket
@@ -1450,12 +1508,45 @@ export const EnvironmentEditor = ({ tabId }: { tabId: string }) => {
       )}
       {/* Top toolbar */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <Settings2 size={15} style={{ color: "var(--icon-primary)" }} />
+        <div className="flex items-baseline gap-2">
+          <Settings2 size={15} style={{ color: "var(--icon-primary)" }} className="self-center" />
           <h2 className="text-sm font-semibold">Environments</h2>
+          {selectedProfile !== "default" && (
+            <div className="relative flex flex-col self-center">
+              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-md border border-border text-comment select-none hover:bg-active transition-colors"
+                style={editingProfileName ? { borderColor: "var(--icon-primary)" } : undefined}
+              >
+                <span className="text-comment/50">profile:</span>
+                {editingProfileName ? (
+                  <input
+                    ref={profileNameInputRef}
+                    value={profileNameValue}
+                    size={Math.max(profileNameValue.length, 1)}
+                    onChange={(e) => { setProfileNameValue(e.target.value); setProfileNameError(null); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleProfileRenameCommit();
+                      if (e.key === "Escape") { setEditingProfileName(false); setProfileNameError(null); }
+                    }}
+                    onBlur={handleProfileRenameCommit}
+                    className="bg-transparent outline-none text-text font-medium text-xs"
+                  />
+                ) : (
+                  <span
+                    className="text-text font-medium cursor-pointer"
+                    onDoubleClick={() => { setProfileNameValue(selectedProfile); setEditingProfileName(true); }}
+                  >
+                    {selectedProfile}
+                  </span>
+                )}
+              </span>
+              {profileNameError && (
+                <span className="absolute top-full left-0 mt-1 text-xs px-2 py-0.5 rounded-md bg-panel border border-border whitespace-nowrap z-50" style={{ color: "var(--icon-danger)" }}>{profileNameError}</span>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          <ProfileSelector selectedProfile={selectedProfile} onSelectProfile={(p) => { setSelectedProfile(p); setSelectedEnvPath(null); }} />
+          <ProfileSelector selectedProfile={selectedProfile} onSelectProfile={(p) => { setSelectedProfile(p); setSelectedEnvPath(null); setEditingProfileName(false); }} />
         </div>
       </div>
 

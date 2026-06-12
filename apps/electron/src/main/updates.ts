@@ -2,11 +2,99 @@ import { app, dialog, ipcMain, BrowserWindow } from "electron";
 import { autoUpdater, type ProgressInfo } from "electron-updater";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import * as semver from "semver";
 import * as https from "https";
 import { execFile } from "child_process";
 import { windowManager } from "./windowManager";
 import { saveSettings } from "./settings";
+
+// ---------- Updater logger ----------
+
+let _updaterLogStream: fs.WriteStream | null = null;
+
+function getUpdaterLogPath(): string {
+  return path.join(app.getPath("logs"), "updater.log");
+}
+
+function getUpdaterLogStream(): fs.WriteStream {
+  if (!_updaterLogStream) {
+    const logPath = getUpdaterLogPath();
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    _updaterLogStream = fs.createWriteStream(logPath, { flags: "a" });
+  }
+  return _updaterLogStream;
+}
+
+function clearUpdaterLog() {
+  try {
+    // Close the existing stream so we can truncate the file
+    if (_updaterLogStream) {
+      _updaterLogStream.end();
+      _updaterLogStream = null;
+    }
+    const logPath = getUpdaterLogPath();
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.writeFileSync(logPath, "");
+  } catch (err) {
+    console.error("Failed to clear updater log:", err);
+  }
+}
+
+function updaterLog(level: "INFO" | "WARN" | "ERROR" | "DEBUG", message: string) {
+  const line = `[${new Date().toISOString()}] [${level}] ${message}\n`;
+  try {
+    getUpdaterLogStream().write(line);
+  } catch {
+    // stream may be closed during shutdown — ignore
+  }
+  if (level === "ERROR") console.error(`[updater] ${message}`);
+  else if (level === "WARN") console.warn(`[updater] ${message}`);
+  else console.log(`[updater] ${message}`);
+}
+
+const updaterLogger = {
+  info:  (msg?: unknown) => updaterLog("INFO",  String(msg ?? "")),
+  warn:  (msg?: unknown) => updaterLog("WARN",  String(msg ?? "")),
+  error: (msg?: unknown) => updaterLog("ERROR", String(msg ?? "")),
+  debug: (msg: string)   => updaterLog("DEBUG", msg),
+};
+
+// ---------- Cache helpers ----------
+
+function getUpdaterCacheDir(): string {
+  // electron-updater derives this as "<appName>-updater" (see forge.config.ts updaterCacheDirName)
+  const dirName = `${app.getName()}-updater`;
+  const home = os.homedir();
+  if (process.platform === "win32") {
+    return path.join(process.env["LOCALAPPDATA"] || path.join(home, "AppData", "Local"), dirName);
+  }
+  return path.join(home, "Library", "Caches", dirName);
+}
+
+function clearUpdaterCache() {
+  // Linux uses a custom download path (fixed temp file that is always overwritten),
+  // so stale-cache issues only apply to macOS/Windows electron-updater paths.
+  if (process.platform !== "darwin" && process.platform !== "win32") return;
+  // Never delete the cache while a file is being downloaded or installed —
+  // the temp file is written via an open fd, so the write succeeds but the
+  // subsequent rename fails with ENOENT once the directory is gone.
+  if (isDownloadOrInstallInProgress()) {
+    updaterLog("INFO", "clearUpdaterCache: skipped — download/install in progress");
+    return;
+  }
+  try {
+    // electron-updater caches downloads at: <OS cache dir>/voiden-updater/pending
+    // Clearing before each check prevents stale installers from being used
+    // when a newer update has since been released.
+    const cacheDir = getUpdaterCacheDir();
+    if (fs.existsSync(cacheDir)) {
+      fs.rmSync(cacheDir, { recursive: true, force: true });
+    }
+  } catch (err) {
+    console.error("Failed to clear updater cache:", err);
+  }
+}
 
 // Update state management
 enum UpdateState {
@@ -32,6 +120,14 @@ function isUpdateInProgress(): boolean {
     currentUpdateState === UpdateState.INSTALLING;
 }
 
+// Narrower check: only true while the installer file is being written or applied.
+// Used to guard clearUpdaterCache() — CHECKING is fine to clear (no file yet),
+// but DOWNLOADING/INSTALLING must never be interrupted.
+function isDownloadOrInstallInProgress(): boolean {
+  return currentUpdateState === UpdateState.DOWNLOADING ||
+    currentUpdateState === UpdateState.INSTALLING;
+}
+
 function isUpdateSupported(): boolean {
   // Updates only work in packaged/production builds
   return app.isPackaged;
@@ -54,6 +150,82 @@ function showToast(type: "info" | "error" | "warning", title: string, descriptio
     } catch (err) { /* window may be destroyed */ }
   }
 }
+
+// ---------- Cross-channel update hint ----------
+
+// Tracks the last version we already toasted about so we don't spam every hour.
+let _lastCrossChannelToastVersion = "";
+
+function sendChannelSwitchToast(version: string, targetChannel: "stable" | "early-access") {
+  const win = windowManager.browserWindow ?? BrowserWindow.getAllWindows()[0];
+  if (!win) return;
+  try {
+    win.webContents.send("toast:channelSwitch", { version, targetChannel });
+  } catch { /* window may be destroyed */ }
+}
+
+async function checkOtherChannelForUpdate(
+  currentVersion: string,
+  currentChannel: "stable" | "early-access",
+): Promise<void> {
+  if (isDownloadOrInstallInProgress()) return;
+
+  const otherChannel = currentChannel === "stable" ? "early-access" : "stable";
+  const otherChannelPath = otherChannel === "early-access" ? "beta" : "stable";
+  const platform = process.platform;
+  const arch = process.arch;
+
+  // Build the check URL. For macOS/Windows we fetch latest.yml (used by electron-updater);
+  // for Linux we use the same latest.json endpoint as the main Linux check.
+  const checkUrl = platform === "linux"
+    ? `https://voiden.md/api/download/${otherChannelPath}/linux/latest.json`
+    : `https://voiden.md/api/download/${otherChannelPath}/${platform}/${arch}/latest.yml`;
+
+  const requestOptions = {
+    headers: { "User-Agent": `Voiden/${currentVersion} (${platform}: ${arch})` },
+  };
+
+  return new Promise((resolve) => {
+    https.get(checkUrl, requestOptions, (res) => {
+      // Follow up to one redirect (CDN etc.)
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        https.get(res.headers.location, requestOptions, handleResponse).on("error", () => resolve());
+        return;
+      }
+      handleResponse(res);
+
+      function handleResponse(response: import("http").IncomingMessage) {
+        let data = "";
+        response.on("data", (chunk: string) => (data += chunk));
+        response.on("end", () => {
+          try {
+            let version: string | undefined;
+            if (platform === "linux") {
+              version = JSON.parse(data)?.version;
+            } else {
+              // latest.yml contains "version: X.Y.Z" as a top-level key
+              version = data.match(/^version:\s*([^\s]+)/m)?.[1]?.trim();
+            }
+
+            if (
+              version &&
+              semver.valid(version) &&
+              semver.gt(version, currentVersion) &&
+              version !== _lastCrossChannelToastVersion
+            ) {
+              updaterLog("INFO", `Cross-channel hint: ${otherChannel} has v${version} (current: ${currentVersion})`);
+              _lastCrossChannelToastVersion = version;
+              sendChannelSwitchToast(version, otherChannel);
+            }
+          } catch { /* parse error — ignore */ }
+          resolve();
+        });
+      }
+    }).on("error", () => resolve());
+  });
+}
+
+// ---------- Linux package helpers ----------
 
 function detectLinuxPackageType(): "deb" | "rpm" | "appimage" {
   // Check if running as AppImage
@@ -338,17 +510,23 @@ export function initializeUpdates(channel: "stable" | "early-access" = "stable")
     // Check for updates after app is ready, then periodically
     app.whenReady().then(() => {
       setTimeout(() => {
-        autoUpdater.checkForUpdates().catch((err: Error) => {
-          console.error("Auto update check failed:", err);
-        });
+        clearUpdaterCache();
+        autoUpdater.checkForUpdates()
+          .then(() => checkOtherChannelForUpdate(currentVersion, channel))
+          .catch((err: Error) => {
+            console.error("Auto update check failed:", err);
+          });
       }, 10_000);
 
       // Check for updates every hour
       setInterval(() => {
         if (!isUpdateInProgress()) {
-          autoUpdater.checkForUpdates().catch((err: Error) => {
-            console.error("Periodic update check failed:", err);
-          });
+          clearUpdaterCache();
+          autoUpdater.checkForUpdates()
+            .then(() => checkOtherChannelForUpdate(currentVersion, channel))
+            .catch((err: Error) => {
+              console.error("Periodic update check failed:", err);
+            });
         }
       }, 60 * 60 * 1000);
     });
@@ -357,8 +535,16 @@ export function initializeUpdates(channel: "stable" | "early-access" = "stable")
       setTimeout(() => {
         if (!isUpdateInProgress()) {
           checkForLinuxUpdate(currentVersion, channel);
+          checkOtherChannelForUpdate(currentVersion, channel);
         }
       }, 10_000);
+
+      setInterval(() => {
+        if (!isUpdateInProgress()) {
+          checkForLinuxUpdate(currentVersion, channel);
+          checkOtherChannelForUpdate(currentVersion, channel);
+        }
+      }, 60 * 60 * 1000);
     });
   }
 }
@@ -418,9 +604,16 @@ export async function checkForUpdatesManually(channel: "stable" | "early-access"
     try {
       setUpdateState(UpdateState.CHECKING);
       isManualUpdateCheck = true;
+      clearUpdaterCache();
       const result = await autoUpdater.checkForUpdates();
       isManualUpdateCheck = false;
-      setUpdateState(UpdateState.IDLE);
+      // With autoDownload=true, checkForUpdates() resolves as soon as the version
+      // check completes, but the download has already started — update-available
+      // will have moved state to DOWNLOADING. Only reset to IDLE if no download
+      // was triggered (i.e. state is still CHECKING).
+      if (!isDownloadOrInstallInProgress()) {
+        setUpdateState(UpdateState.IDLE);
+      }
 
       if (result?.updateInfo && semver.gt(result.updateInfo.version, currentVersion)) {
         return { available: true, version: result.updateInfo.version };
@@ -445,21 +638,30 @@ function setupAutoUpdaterListeners() {
   if (autoUpdaterInitialized || !isUpdateSupported()) return;
   autoUpdaterInitialized = true;
 
+  // Pipe all internal electron-updater messages to the log file
+  autoUpdater.logger = updaterLogger;
+  updaterLog("INFO", `Updater initialised — app version: ${app.getVersion()}, platform: ${process.platform}/${process.arch}, log: ${getUpdaterLogPath()}`);
+
   autoUpdater.on("checking-for-update", () => {
+    clearUpdaterLog();
+    updaterLog("INFO", `Checking for update — app version: ${app.getVersion()}, platform: ${process.platform}/${process.arch}`);
     setUpdateState(UpdateState.CHECKING);
   });
 
   autoUpdater.on("update-available", () => {
+    updaterLog("INFO", "Update available — starting download");
     setUpdateState(UpdateState.DOWNLOADING);
     sendUpdateProgressToWindows({ status: "downloading", percent: 0 });
   });
 
   autoUpdater.on("update-not-available", () => {
+    updaterLog("INFO", "No update available");
     setUpdateState(UpdateState.IDLE);
   });
 
   // electron-updater provides detailed progress events
   autoUpdater.on("download-progress", (progress: ProgressInfo) => {
+    updaterLog("DEBUG", `Download progress: ${Math.round(progress.percent)}% (${progress.transferred}/${progress.total} bytes, ${progress.bytesPerSecond} B/s)`);
     sendUpdateProgressToWindows({
       status: "downloading",
       percent: Math.round(progress.percent),
@@ -470,27 +672,50 @@ function setupAutoUpdaterListeners() {
   });
 
   autoUpdater.on("update-downloaded", () => {
+    updaterLog("INFO", "Update download complete — showing restart dialog");
     setUpdateState(UpdateState.READY);
-    app.focus();
-    dialog.showMessageBox({
-      type: "info",
-      buttons: ["Restart Now", "Later"],
-      defaultId: 0,
-      title: "Update Ready",
-      message: "Update downloaded successfully!",
-      detail: "The application will restart to complete the installation.",
-    }).then((restartResponse) => {
-      if (restartResponse.response === 0) {
-        saveSettings({ ui: { show_whats_new_after_update: true } });
-        autoUpdater.quitAndInstall(true, true);
-      } else {
-        setUpdateState(UpdateState.IDLE);
-      }
-    });
+
+    const showRestartDialog = () => {
+      updaterLog("INFO", "Restart dialog displayed to user");
+      app.focus();
+      dialog.showMessageBox({
+        type: "info",
+        buttons: ["Restart Now", "Later"],
+        defaultId: 0,
+        title: "Update Ready",
+        message: "Update downloaded successfully!",
+        detail: "The application will restart to complete the installation.",
+      }).then((restartResponse) => {
+        if (restartResponse.response === 0) {
+          updaterLog("INFO", "User chose 'Restart Now' — calling quitAndInstall");
+          setUpdateState(UpdateState.INSTALLING);
+          // setImmediate lets any pending IPC/event-loop work drain before quitting
+          setImmediate(() => {
+            updaterLog("INFO", "quitAndInstall invoked");
+            autoUpdater.quitAndInstall(true, true);
+          });
+        } else {
+          updaterLog("INFO", "User chose 'Later' — update deferred");
+          setUpdateState(UpdateState.IDLE);
+        }
+      });
+    };
+
+    // On macOS, electron-updater fires update-downloaded and *then* tells
+    // Squirrel.Mac to download the zip from its local proxy server. Squirrel
+    // must finish that download before quitAndInstall can actually install.
+    // A short delay ensures squirrelDownloadedUpdate=true by the time the
+    // user clicks "Restart Now", avoiding a silent quit with no install.
+    if (process.platform === "darwin") {
+      updaterLog("INFO", "macOS: waiting 2 s for Squirrel.Mac to pull from proxy before showing dialog");
+      setTimeout(showRestartDialog, 2000);
+    } else {
+      showRestartDialog();
+    }
   });
 
   autoUpdater.on("error", (error: Error) => {
-    console.error("Update error:", error);
+    updaterLog("ERROR", `Update error: ${error.stack ?? error.message}`);
     setUpdateState(UpdateState.ERROR);
 
     const isNetworkError = /ENOTFOUND|ENETUNREACH|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ERR_INTERNET_DISCONNECTED|ERR_NETWORK_CHANGED|getaddrinfo/i.test(error.message);
@@ -621,9 +846,13 @@ export function registerUpdateIpcHandlers() {
         });
       }
 
+      // Always check the other channel when user manually checks
+      checkOtherChannelForUpdate(app.getVersion(), channel);
       return { available: true, version: result.version };
     } else {
       showToast("info", "No Updates Available", `You're running the latest version! (${app.getVersion()})`);
+      // Still cross-check the other channel in case there's something there
+      checkOtherChannelForUpdate(app.getVersion(), channel);
       return { available: false };
     }
   });
@@ -631,5 +860,19 @@ export function registerUpdateIpcHandlers() {
   // Add IPC handler to get current update state
   ipcMain.handle("app:getUpdateState", () => {
     return { state: currentUpdateState };
+  });
+
+  // Expose log path so the renderer can offer a "Show updater log" action
+  ipcMain.handle("app:getUpdaterLogPath", () => getUpdaterLogPath());
+
+  // Return current log file contents to the renderer
+  ipcMain.handle("app:readUpdaterLog", () => {
+    try {
+      const logPath = getUpdaterLogPath();
+      if (!fs.existsSync(logPath)) return "";
+      return fs.readFileSync(logPath, "utf8");
+    } catch {
+      return "";
+    }
   });
 }

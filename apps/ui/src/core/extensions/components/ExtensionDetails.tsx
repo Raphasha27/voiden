@@ -113,8 +113,8 @@ const ChangelogEntry = ({ entry }: { entry: any }) => {
   );
 };
 
-const TABS = ["Documentation", "Capabilities", "Features", "Changelog"] as const;
-type Tab = typeof TABS[number];
+const ALL_TABS = ["Documentation", "Capabilities", "Features", "Changelog"] as const;
+type Tab = typeof ALL_TABS[number];
 
 export const ExtensionDetails = ({
   extensionData: initialExtensionData,
@@ -352,6 +352,18 @@ export const ExtensionDetails = ({
   const hasPipeline   = !!capabilities.requestPipeline;
   const hasCapabilities = hasUiButtons || hasUiPanels || hasBlocks || hasSlash || hasPaste || hasPipeline;
 
+  const availableTabs = ALL_TABS.filter((tab) => {
+    if (tab === "Capabilities") return hasCapabilities;
+    if (tab === "Features") return features.length > 0;
+    return true;
+  });
+
+  useEffect(() => {
+    if (!availableTabs.includes(activeTab)) {
+      setActiveTab("Documentation");
+    }
+  }, [hasCapabilities, features.length]);
+
   const renderTypeBadge = () => (
     extensionData.type === "core" ? (
       <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded border border-purple-500/30 text-purple-400 bg-purple-500/10">
@@ -430,15 +442,14 @@ export const ExtensionDetails = ({
 
     if (extensionData.type === "community") {
       if (!extensionData.installedPath) {
-        if (extensionData.incompatibleLatestVersion) {
-          return (
-            <button disabled className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-active/40 text-comment cursor-not-allowed border border-border">
-              Install
-            </button>
-          );
-        }
+        // If a compatible newer version exists, install it directly.
+        // If the latest is incompatible, install the current (older) version — the
+        // incompatibility badge will appear naturally after install.
+        const versionToInstall = extensionData.latestVersion
+          ? { ...extensionData, version: extensionData.latestVersion, latestVersion: undefined }
+          : extensionData;
         return (
-          <button onClick={() => installMutation.mutate(extensionData)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-button-primary hover:bg-button-primary-hover text-bg font-medium transition-colors shadow-sm">
+          <button onClick={() => installMutation.mutate(versionToInstall)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-button-primary hover:bg-button-primary-hover text-bg font-medium transition-colors shadow-sm">
             {installMutation.isPending ? <><Loader2 size={11} className="animate-spin" /> Installing...</> : "Install"}
           </button>
         );
@@ -499,7 +510,7 @@ export const ExtensionDetails = ({
                   v{updateInfo?.remoteVersion} — needs Voiden {updateInfo?.requiredAppVersion}
                 </span>
               )}
-              {extensionData.type === "community" && extensionData.latestVersion && (
+              {extensionData.type === "community" && extensionData.installedPath && extensionData.latestVersion && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded border border-blue-500/30 text-blue-400 bg-blue-500/10 font-medium">
                   Update available to v{extensionData.latestVersion}
                 </span>
@@ -564,7 +575,7 @@ export const ExtensionDetails = ({
 
       {/* ── Tabs ── */}
       <div className="flex-shrink-0 flex items-center gap-0 border-b border-border px-5 bg-editor">
-        {TABS.map((tab) => (
+        {availableTabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}

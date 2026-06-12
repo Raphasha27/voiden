@@ -104,8 +104,8 @@ export const MainEditor = ({ bottomPanelProps, rightPanelProps }: MainEditorProp
   );
 
   const editorContent = (
-    <div id="main-editor" className="relative flex-1 bg-editor">
-      <div className="absolute inset-0 ">
+    <div id="main-editor" className="relative flex-1 bg-editor overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden">
         <PanelContent panelId="main" />
       </div>
     </div>

@@ -9,7 +9,8 @@ import { runVoidFile } from './runner.js'
 import { loadEnabledPlugins } from './plugins/loader.js'
 import { exportToCsv } from './report/csv.js'
 import { sendMailReport } from './report/mail.js'
-import { CORE_PLUGINS, findPlugin } from './plugins/registry.js'
+import { getCorePlugins, findPlugin } from './plugins/registry.js'
+import { downloadCoreRunner } from './plugins/loader.js'
 import {
   fetchCommunityPlugins,
   findCommunityPlugin,
@@ -20,10 +21,12 @@ import {
   installPlugin,
   uninstallPlugin,
   setPluginEnabled,
+  setPluginVersion,
   getAllInstalledPlugins,
   readStore,
   STORE_DIR,
 } from './plugins/store.js'
+import { checkForPluginUpdates, type PluginUpdateInfo } from './plugins/updateCheck.js'
 import {
   appendSessionResults,
   loadSessionResults,
@@ -335,6 +338,32 @@ function printRunSummaryJson(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Plugin update notices — surfaced after `run` and `plugin` commands so users
+// learn about newer registry versions without having to run `plugin list`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function printUpdateNotice(updates: PluginUpdateInfo[]): void {
+  if (updates.length === 0) return
+  console.log()
+  console.log(chalk.yellow(`  ⬆  ${updates.length} plugin update${updates.length !== 1 ? 's' : ''} available`))
+  for (const u of updates) {
+    console.log(
+      chalk.gray(`     ${chalk.bold(u.id.padEnd(24))} ${u.installedVersion} → ${chalk.green(u.latestVersion)}`)
+    )
+  }
+  console.log(chalk.gray(`     Run: voiden-runner plugin update --all`))
+}
+
+/** Best-effort update check — never throws, never blocks command output on failure. */
+async function notifyPluginUpdates(): Promise<void> {
+  try {
+    printUpdateNotice(await checkForPluginUpdates())
+  } catch {
+    // Informational only — ignore failures (e.g. offline)
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CLI
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -615,6 +644,10 @@ program
       console.log(chalk.gray('     (use this exit code in your shell script to abort on failure)'))
       console.log()
     }
+
+    // Surface plugin update notices — skipped in --json mode so output stays machine-readable
+    if (!opts.json) await notifyPluginUpdates()
+
     process.exit(shouldFail ? 1 : 0)
   })
 
@@ -859,15 +892,16 @@ pluginCmd
   )
   .option('--all', 'Install all core plugins (community plugins must be installed by name)')
   .action(async (names: string[], opts) => {
+    const corePlugins = await getCorePlugins()
     const communityPlugins = await fetchCommunityPlugins()
 
     const targets: string[] = opts.all
-      ? CORE_PLUGINS.map(p => p.name)
+      ? corePlugins.map(p => p.name)
       : names
 
     if (targets.length === 0) {
       console.error(chalk.red('Specify plugin name(s) or use --all'))
-      console.log(chalk.gray('  Core: ' + CORE_PLUGINS.map(p => p.name).join(', ')))
+      console.log(chalk.gray('  Core: ' + corePlugins.map(p => p.name).join(', ')))
       if (communityPlugins.length > 0) {
         console.log(chalk.gray('  Community (install by name): ' + communityPlugins.map(p => p.id).join(', ')))
       }
@@ -876,7 +910,7 @@ pluginCmd
 
     let installedCount = 0
     for (const name of targets) {
-      const coreDef = findPlugin(name)
+      const coreDef = await findPlugin(name)
       const commDef = !coreDef ? findCommunityPlugin(name, communityPlugins) : undefined
       if (!coreDef && !commDef) {
         console.log(chalk.yellow(`  ⚠  Unknown plugin "${name}" — skipped`))
@@ -892,6 +926,7 @@ pluginCmd
             process.stdout.write('\r' + chalk.yellow(`  ⚠  No runner.js in release for "${name}" — skipped\n`))
             continue
           }
+          setPluginVersion(name, commDef.version)
           process.stdout.write('\r' + ' '.repeat(60) + '\r') // clear the line
         } catch (err: any) {
           process.stdout.write('\r' + chalk.red(`  ✗  Failed to download runner for "${name}": ${err?.message ?? String(err)}\n`))
@@ -900,7 +935,7 @@ pluginCmd
       }
 
       const description = coreDef ? coreDef.description : commDef!.description
-      const fresh = installPlugin(name)
+      const fresh = installPlugin(name, coreDef?.version ?? commDef?.version)
       if (fresh) {
         console.log(chalk.green(`  ✓  Installed`) + chalk.bold(` ${name}`) + chalk.gray(`  —  ${description}`))
         installedCount++
@@ -912,6 +947,87 @@ pluginCmd
     if (installedCount > 0) {
       console.log()
       console.log(chalk.gray(`  ${installedCount} plugin(s) installed. State saved to ~/.voiden/plugins.json`))
+    }
+
+    await notifyPluginUpdates()
+  })
+
+// voiden-runner plugin update [names...] --all
+pluginCmd
+  .command('update [names...]')
+  .description(
+    'Update installed plugins to the latest registry version\n\n' +
+    '  --all updates every installed plugin that has a newer version available.\n\n' +
+    '  Examples:\n' +
+    '    voiden-runner plugin update --all\n' +
+    '    voiden-runner plugin update voiden-scripting\n' +
+    '    voiden-runner plugin update apyhub-explorer voiden-scripting\n'
+  )
+  .option('--all', 'Update every installed plugin that has a newer version available')
+  .action(async (names: string[], opts) => {
+    const updates = await checkForPluginUpdates()
+    if (updates.length === 0) {
+      console.log(chalk.gray('  All installed plugins are up to date.'))
+      return
+    }
+
+    const targets: string[] = opts.all ? updates.map(u => u.id) : names
+    if (targets.length === 0) {
+      console.log(chalk.yellow(`  ${updates.length} update${updates.length !== 1 ? 's' : ''} available — specify plugin name(s) or use --all:`))
+      printUpdateNotice(updates)
+      return
+    }
+
+    const corePlugins = await getCorePlugins()
+    const communityPlugins = await fetchCommunityPlugins()
+
+    let updatedCount = 0
+    for (const name of targets) {
+      const update = updates.find(u => u.id === name)
+      if (!update) {
+        const known = readStore().installedPlugins[name]
+        console.log(known
+          ? chalk.gray(`  ·  ${name} is already up to date — skipped`)
+          : chalk.yellow(`  ⚠  Plugin "${name}" is not installed — skipped`));
+        continue
+      }
+
+      process.stdout.write(`  ↓  Updating ${chalk.bold(name)} to v${update.latestVersion} …`)
+      try {
+        if (update.type === 'core') {
+          const def = corePlugins.find(p => p.name === name)
+          if (!def) throw new Error('plugin no longer in core registry')
+          const ok = await downloadCoreRunner(def.name, def.repo, def.runnerAsset, def.version, false)
+          process.stdout.write('\r' + ' '.repeat(60) + '\r')
+          if (!ok) {
+            console.log(chalk.red(`  ✗  No "${def.runnerAsset}" asset in release v${update.latestVersion} for "${name}"`))
+            continue
+          }
+        } else {
+          const def = communityPlugins.find(p => p.id === name)
+          if (!def) throw new Error('plugin no longer in community registry')
+          const result = await installCommunityRunner(def)
+          process.stdout.write('\r' + ' '.repeat(60) + '\r')
+          if (result === 'no-runner') {
+            console.log(chalk.red(`  ✗  No runner.js in release v${update.latestVersion} for "${name}"`))
+            continue
+          }
+          setPluginVersion(name, update.latestVersion)
+        }
+        console.log(
+          chalk.green(`  ✓  Updated`) + chalk.bold(` ${name}`) +
+          chalk.gray(`  ${update.installedVersion} → ${update.latestVersion}`)
+        )
+        updatedCount++
+      } catch (err: any) {
+        process.stdout.write('\r' + ' '.repeat(60) + '\r')
+        console.log(chalk.red(`  ✗  Failed to update "${name}": ${err?.message ?? String(err)}`))
+      }
+    }
+
+    if (updatedCount > 0) {
+      console.log()
+      console.log(chalk.gray(`  ${updatedCount} plugin(s) updated.`))
     }
   })
 
@@ -983,31 +1099,34 @@ pluginCmd
     '    voiden-runner plugin disable --all\n'
   )
   .option('--all', 'Disable all plugins (core and community)')
-  .action((name: string | undefined, opts: { all?: boolean }) => {
+  .action(async (name: string | undefined, opts: { all?: boolean }) => {
+    const corePlugins = await getCorePlugins()
     if (opts.all) {
       // Disable all core plugins
-      for (const def of CORE_PLUGINS) {
+      for (const def of corePlugins) {
         setPluginEnabled(def.name, false)
         console.log(chalk.yellow(`  ·  Disabled`) + ` ${def.name}`)
       }
       // Disable all installed community plugins
       const store = readStore()
-      const communityNames = Object.keys(store.installedPlugins).filter(n => !findPlugin(n))
+      const coreNames = new Set(corePlugins.map(p => p.name))
+      const communityNames = Object.keys(store.installedPlugins).filter(n => !coreNames.has(n))
       for (const n of communityNames) {
         setPluginEnabled(n, false)
         console.log(chalk.yellow(`  ·  Disabled`) + ` ${n}`)
       }
-      const total = CORE_PLUGINS.length + communityNames.length
+      const total = corePlugins.length + communityNames.length
       console.log(chalk.gray(`  ${total} plugin(s) disabled.`))
       return
     }
     if (!name) {
       console.error(chalk.red('  Specify a plugin name or use --all'))
       process.exit(1)
+      return
     }
     setPluginEnabled(name, false)
     console.log(chalk.yellow(`  ·  Disabled`) + ` ${name}`)
-    if (findPlugin(name)) {
+    if (await findPlugin(name)) {
       console.log(chalk.gray(`     Core plugin disabled. Re-enable with: voiden-runner plugin enable ${name}`))
     }
   })
@@ -1018,19 +1137,28 @@ pluginCmd
   .description('List all available and installed plugins')
   .action(async () => {
     const store = readStore()
+    const corePlugins = await getCorePlugins()
     const communityPlugins = await fetchCommunityPlugins()
 
+    // Per-plugin "update available" badge — compares the version recorded at
+    // install/download time against the registry's current version.
+    const updateBadge = (id: string, latestVersion: string): string => {
+      const installedVersion = store.installedPlugins[id]?.version
+      if (!installedVersion || installedVersion === latestVersion) return ''
+      return chalk.yellow(`  ⬆ v${latestVersion} available`)
+    }
+
     console.log()
-    console.log(chalk.bold('  Core plugins') + chalk.gray('  (from individual plugin repos)'))
+    console.log(chalk.bold('  Core plugins') + chalk.gray('  (from VoidenHQ/plugin-registry)'))
     console.log(DIVIDER)
 
-    for (const def of CORE_PLUGINS) {
+    for (const def of corePlugins) {
       const record = store.installedPlugins[def.name]
       const isDisabled = record !== undefined && !record.enabled
       const statusBadge = isDisabled
         ? chalk.yellow('  · disabled')
         : chalk.green('  ✓ enabled')
-      console.log(`  ${chalk.bold(def.name.padEnd(24))}${statusBadge}`)
+      console.log(`  ${chalk.bold(def.name.padEnd(24))}${statusBadge}${updateBadge(def.name, def.version)}`)
       console.log(chalk.gray(`    ${def.description}`))
     }
 
@@ -1040,7 +1168,7 @@ pluginCmd
       console.log(chalk.bold('  Community plugins') + chalk.gray('  (could not fetch — check your connection)'))
       console.log(DIVIDER)
     } else {
-      console.log(chalk.bold('  Community plugins') + chalk.gray('  (github.com/VoidenHQ/plugins)'))
+      console.log(chalk.bold('  Community plugins') + chalk.gray('  (from VoidenHQ/plugin-registry)'))
       console.log(DIVIDER)
       for (const def of communityPlugins) {
         const installed = store.installedPlugins[def.id]
@@ -1054,7 +1182,7 @@ pluginCmd
         }
         const runnerBadge = hasCommunityRunner(def.id) ? '' : chalk.gray('  [no runner]')
         console.log(
-          `  ${chalk.bold(def.id.padEnd(24))}${statusBadge}${runnerBadge}` +
+          `  ${chalk.bold(def.id.padEnd(24))}${statusBadge}${runnerBadge}${updateBadge(def.id, def.version)}` +
           chalk.gray(`  v${def.version}`) +
           chalk.gray(`  by ${def.author}`)
         )
@@ -1063,7 +1191,7 @@ pluginCmd
     }
 
     const knownIds = new Set([
-      ...CORE_PLUGINS.map(p => p.name),
+      ...corePlugins.map(p => p.name),
       ...communityPlugins.map(p => p.id),
     ])
     const extras = getAllInstalledPlugins().filter(p => !knownIds.has(p.name))
@@ -1075,6 +1203,12 @@ pluginCmd
         const badge = p.enabled ? chalk.green('  ✓ enabled') : chalk.yellow('  · disabled')
         console.log(`  ${chalk.bold(p.name.padEnd(24))}${badge}`)
       }
+    }
+
+    const updates = await checkForPluginUpdates()
+    if (updates.length > 0) {
+      console.log()
+      console.log(chalk.gray(`  Run: voiden-runner plugin update --all  (${updates.length} update${updates.length !== 1 ? 's' : ''} available)`))
     }
 
     console.log()
