@@ -12,6 +12,7 @@ import type { ResponseNodeType } from "../stores/responseStore";
 import { SendRequestButton } from "./SendRequestButton";
 import { ResponseViewer, type ResponseViewerHandle } from "./ResponseViewer";
 import { useMemo, useEffect, useCallback, useState, useRef, useSyncExternalStore } from "react";
+import { usePluginStore, type ResponsePanelSection } from "@/plugins";
 import { Search, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
 import { useGetPanelTabs } from "@/core/layout/hooks";
 import { parseMarkdown } from "@/core/editors/voiden/markdownConverter";
@@ -55,33 +56,25 @@ function hasAnyResponse(tabSections: Record<number, any> | undefined): boolean {
   return Object.values(tabSections).some((s: any) => s?.responseDoc);
 }
 
-/** Hook to subscribe to stitch store for the active file or tab */
-function useStitchResults(activeTabId: string | undefined) {
-  const [hasResults, setHasResults] = useState(false);
-  const [StitchComponent, setStitchComponent] = useState<React.ComponentType<{ tabId?: string; embedded?: boolean }> | null>(null);
+/**
+ * Generic hook that subscribes to all plugin-registered response panel sections
+ * and returns those that currently have results for the active tab.
+ * No plugin IDs are hardcoded here — plugins register via context.registerResponsePanelSection().
+ */
+function useRegisteredResponsePanelSections(activeTabId: string | undefined): ResponsePanelSection[] {
+  const sections = usePluginStore((state) => state.responsePanelSections);
+  const [visible, setVisible] = useState<ResponsePanelSection[]>([]);
 
   useEffect(() => {
-    const helpers = (window as any).__voidenHelpers__?.['voiden-stitch'];
-    if (!helpers?.stitchStore) return;
-
-    const store = helpers.stitchStore;
-    const update = () => {
-      const fileRun = store.getRun(activeTabId);
-      setHasResults(fileRun?.status !== 'idle' && !!fileRun?.id);
+    const recheck = () => {
+      setVisible(sections.filter((s) => s.hasResults(activeTabId)));
     };
-    update();
-    const unsub = store.subscribe(update);
-    return unsub;
-  }, [activeTabId]);
+    recheck();
+    const unsubs = sections.map((s) => s.subscribe(recheck));
+    return () => unsubs.forEach((u) => u());
+  }, [sections, activeTabId]);
 
-  useEffect(() => {
-    const helpers = (window as any).__voidenHelpers__?.['voiden-stitch'];
-    if (helpers?.StitchResultsSidebar && !StitchComponent) {
-      setStitchComponent(() => helpers.StitchResultsSidebar);
-    }
-  });
-
-  return { hasResults, StitchComponent };
+  return visible;
 }
 
 export function ResponsePanelContainer() {
@@ -94,8 +87,8 @@ export function ResponsePanelContainer() {
   const isVoidFile = activeTab?.title?.endsWith(".void") ?? false;
   const activeFilePath = (activeTab as any)?.source || undefined;
 
-  // Subscribe to stitch results — passes tabId as fallback for unsaved temp files
-  const { hasResults: hasStitchResults, StitchComponent } = useStitchResults(activeTabId);
+  // All plugin-registered response panel sections with results for the active tab
+  const pluginResponseSections = useRegisteredResponsePanelSections(activeTabId);
 
   const {
     isLoading,
@@ -296,9 +289,9 @@ export function ResponsePanelContainer() {
             next.add(collapseKey); // collapse
           }
         }
-        // Also collapse stitch section when focusing on new request
-        if (hasStitchResults) {
-          next.add(`${activeTabId}:stitch`);
+        // Also collapse any plugin response sections when focusing on a new request
+        for (const section of pluginResponseSections) {
+          next.add(`${activeTabId}:plugin:${section.id}`);
         }
         return next;
       });
@@ -374,9 +367,14 @@ export function ResponsePanelContainer() {
     ((typeof statusInfo.statusCode === "number" && statusInfo.statusCode >= 400) ||
       (isWssOrGrpc && !isSuccess));
 
-  const showContent = !isLoading && !error && (!!responseDoc || hasStitchResults);
-  const showEmpty = !isLoading && !error && !responseDoc && !hasStitchResults;
+  const hasPluginResults = pluginResponseSections.length > 0;
+  // Plugin sections (e.g. stitch results) are shown regardless of the HTTP loading state —
+  // isLoading only reflects individual request execution, not the plugin's own state.
+  const showContent = hasPluginResults || (!isLoading && !error && !!responseDoc);
+  const showEmpty = !isLoading && !error && !responseDoc && !hasPluginResults;
   const showError = !isLoading && !!error;
+  // Only show the "Executing request…" spinner when plugin sections aren't occupying the panel.
+  const showLoadingSpinner = isLoading && !hasPluginResults;
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -636,8 +634,8 @@ export function ResponsePanelContainer() {
 
       {/* Content area */}
       <div className="flex-1 min-h-0 relative overflow-x-hidden">
-        {/* Loading indicator */}
-        {isLoading && (
+        {/* Loading indicator — only when plugin sections are not occupying the panel */}
+        {showLoadingSpinner && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="flex flex-col items-center gap-3">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-text" />
@@ -705,7 +703,7 @@ export function ResponsePanelContainer() {
         >
           {Array.from(new Set([
             ...cachedResponseTabIds,
-            ...(activeTabId && hasStitchResults ? [activeTabId] : []),
+            ...(activeTabId && hasPluginResults ? [activeTabId] : []),
           ])).map((tabId) => {
             const tabIsActive = tabId === activeTabId;
             const tabSectionData = responses[tabId];
@@ -721,7 +719,7 @@ export function ResponsePanelContainer() {
                 className="h-full min-h-0 min-w-0"
                 style={{ display: tabIsActive ? "block" : "none" }}
               >
-                {sections.length === 1 && !hasStitchResults ? (() => {
+                {sections.length === 1 && !(tabIsActive && hasPluginResults) ? (() => {
                   const singleDoc = sections[0].response.responseDoc;
                   const singleStatus = singleDoc?.attrs?.statusCode;
                   const singleStatusMsg = singleDoc?.attrs?.statusMessage;
@@ -855,38 +853,40 @@ export function ResponsePanelContainer() {
                       </div>
                     )}
                     <div className="flex-1 min-h-0 overflow-y-auto">
-                      {tabIsActive && hasStitchResults && StitchComponent && (
-                        <div
-                          key="stitch-runner"
-                          className="min-w-0"
-                          style={{ borderLeft: "3px solid var(--accent, #7c3aed)" }}
-                        >
+                      {tabIsActive && pluginResponseSections.map((section) => {
+                        const collapseKey = `${tabId}:plugin:${section.id}`;
+                        const SectionComponent = section.component;
+                        return (
                           <div
-                            className="flex min-w-0 items-center gap-2 overflow-hidden px-3 py-1.5 border-b border-border bg-bg cursor-pointer hover:bg-active transition-colors select-none"
-                            onClick={() => toggleSectionCollapse(tabId, "stitch")}
+                            key={section.id}
+                            className="min-w-0"
+                            style={{ borderLeft: "3px solid var(--accent, #7c3aed)" }}
                           >
-                            {collapsedSections.has(`${tabId}:stitch`)
-                              ? <ChevronRight size={14} className="text-comment flex-shrink-0" />
-                              : <ChevronDown size={14} className="text-comment flex-shrink-0" />
-                            }
-                            <div className="size-2 rounded-full flex-shrink-0 bg-success" />
-                            <span className="font-mono text-xs font-bold">
-                              Stitch Runner
-                            </span>
-                            <span
-                              className="text-xs font-semibold uppercase flex-shrink-0"
-                              style={{ color: "var(--accent, #7c3aed)", letterSpacing: "0.5px" }}
+                            <div
+                              className="flex min-w-0 items-center gap-2 overflow-hidden px-3 py-1.5 border-b border-border bg-bg cursor-pointer hover:bg-active transition-colors select-none"
+                              onClick={() => toggleSectionCollapse(tabId, `plugin:${section.id}`)}
                             >
-                              RESULTS
-                            </span>
-                          </div>
-                          {!collapsedSections.has(`${tabId}:stitch`) && (
-                            <div className="ml-2 min-w-0 bg-editor">
-                              <StitchComponent tabId={tabId} embedded />
+                              {collapsedSections.has(collapseKey)
+                                ? <ChevronRight size={14} className="text-comment flex-shrink-0" />
+                                : <ChevronDown size={14} className="text-comment flex-shrink-0" />
+                              }
+                              <div className="size-2 rounded-full flex-shrink-0 bg-success" />
+                              <span className="font-mono text-xs font-bold">{section.label}</span>
+                              <span
+                                className="text-xs font-semibold uppercase flex-shrink-0"
+                                style={{ color: "var(--accent, #7c3aed)", letterSpacing: "0.5px" }}
+                              >
+                                RESULTS
+                              </span>
                             </div>
-                          )}
-                        </div>
-                      )}
+                            {!collapsedSections.has(collapseKey) && (
+                              <div className="ml-2 min-w-0 bg-editor">
+                                <SectionComponent tabId={tabId} embedded />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                       {sections.map(({ sectionIndex, response }) => {
                         const doc = response.responseDoc;
                         const colorIndex = doc?.attrs?.sectionColorIndex ?? sectionIndex;

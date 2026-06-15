@@ -76,6 +76,7 @@ class RequestOrchestratorImpl implements RequestOrchestrator {
     requestLogger.info(`Building request through ${this.requestHandlers.length} plugin handler(s)`);
     let request: any = {
       __sectionPos: options?.sectionPos,
+      ...(environment && Object.keys(environment).length > 0 ? { __envOverride: environment } : {}),
     };
 
     // For multi-request documents, create a scoped editor proxy so all handlers
@@ -163,12 +164,6 @@ class RequestOrchestratorImpl implements RequestOrchestrator {
           }
         }
 
-        console.log('[orchestrator] sectionPos:', sectionPos,
-          'sectionIndex:', sectionIndex,
-          'totalSections:', sections.length,
-          'allTypes:', fullJson.content.map((n: any) => n.type),
-          'scopedTypes:', (sections[sectionIndex] || []).map((n: any) => n.type));
-
         return { type: "doc", content: sections[sectionIndex] || [] };
       };
     }
@@ -194,14 +189,55 @@ class RequestOrchestratorImpl implements RequestOrchestrator {
 
     for (const handler of this.requestHandlers) {
       try {
+        const prevEnvOverride = request?.__envOverride;
         request = await handler(request, handlerEditor);
-        // Preserve __sectionPos across handler chain
+        // Preserve internal metadata across handler chain — handlers that return
+        // a fresh object (e.g. voiden-rest-api) must not silently drop these.
         if (sectionPos !== undefined && request) {
           request.__sectionPos = sectionPos;
+        }
+        if (prevEnvOverride && request && !request.__envOverride) {
+          request.__envOverride = prevEnvOverride;
         }
       } catch (error) {
         requestLogger.error("Error in plugin request handler:", error);
         throw error;
+      }
+    }
+
+    // Apply __envOverride substitutions to the built request before sending.
+    // Scenario env vars ({{VAR}}) are resolved here so they work even when no
+    // active environment is selected in the UI.
+    if (request?.__envOverride && Object.keys(request.__envOverride).length > 0) {
+      const env: Record<string, string> = request.__envOverride;
+      const substitute = (text: string): string =>
+        text.replace(/\{\{([^}]+)\}\}/g, (match, varName) => {
+          const key = varName.trim();
+          return Object.prototype.hasOwnProperty.call(env, key) ? env[key] : match;
+        });
+      if (typeof request.url === 'string') request.url = substitute(request.url);
+      if (typeof request.body === 'string') request.body = substitute(request.body);
+      if (Array.isArray(request.headers)) {
+        request.headers = request.headers.map((h: any) => ({ ...h, value: substitute(String(h.value ?? '')) }));
+      }
+      if (Array.isArray(request.params)) {
+        request.params = request.params.map((p: any) => ({ ...p, value: substitute(String(p.value ?? '')) }));
+      }
+      if (Array.isArray(request.path_params)) {
+        request.path_params = request.path_params.map((p: any) => ({ ...p, value: substitute(String(p.value ?? '')) }));
+      }
+      // Binary file path (restFile / fileLink) — file path can be a {{VAR}} reference
+      if (typeof request.binary === 'string') {
+        request.binary = substitute(request.binary);
+      } else if (Array.isArray(request.binary)) {
+        request.binary = request.binary.map((b: any) => typeof b === 'string' ? substitute(b) : b);
+      }
+      // Multipart body params — substitute values for both text and file entries
+      if (Array.isArray(request.body_params)) {
+        request.body_params = request.body_params.map((p: any) => ({
+          ...p,
+          value: typeof p.value === 'string' ? substitute(p.value) : p.value,
+        }));
       }
     }
 

@@ -73,6 +73,7 @@ import { useActiveEnvironment, useEnvironments } from "@/core/environment/hooks"
 import { getResponsePanelPosition as getResponsePanelPositionFn } from "@/core/stores/responsePanelPosition";
 import { getTable, parseAuthNode, buildHeadersWithCookies, findNode, findNodes, createNewRequestObject, getRequest } from "@/core/request-engine/getRequestFromJson";
 import { voidenExtensions as coreVoidenExtensions } from "@/core/editors/voiden/extensions";
+import { registerCustomVariableHighlighter, type CustomVariableHighlighterRule } from "@/core/editors/voiden/extensions/environmentHighlighter";
 import { expandLinkedBlocksInDoc } from "@/core/editors/voiden/utils/expandLinkedBlocks";
 import { useResponseStore } from "@/core/request-engine/stores/responseStore";
 import { replaceProcessVariablesInText } from "@/core/request-engine/runtimeVariables";
@@ -188,6 +189,30 @@ export interface PluginSettingsSection {
   pluginId: string;
 }
 
+/**
+ * A response-panel section that a plugin can register.
+ * The core ResponsePanelContainer renders all registered sections generically —
+ * no plugin IDs are hardcoded there.
+ */
+export interface ResponsePanelSection {
+  /** Stable unique key for this section (used for collapse state). */
+  id: string;
+  /** Label shown in the collapsible section header. */
+  label: string;
+  /** React component rendered as the section body. Receives { tabId, embedded }. */
+  component: React.ComponentType<{ tabId?: string; embedded?: boolean }>;
+  /**
+   * Called with the active tab ID to decide whether to show this section.
+   * Return true when there are results to display.
+   */
+  hasResults: (tabId: string | undefined) => boolean;
+  /**
+   * Subscribe to the plugin's store so the core can re-evaluate hasResults.
+   * Must return an unsubscribe function.
+   */
+  subscribe: (listener: () => void) => () => void;
+}
+
 export interface CorePluginUpdateInfo {
   pluginId: string;
   currentVersion: string | null;
@@ -231,6 +256,9 @@ interface PluginStoreState {
   addContextMenuItem: (item: PluginContextMenuItem) => void;
   settingsPageSections: PluginSettingsSection[];
   addSettingsSection: (section: PluginSettingsSection) => void;
+  /** Sections registered by plugins for display in the response panel. */
+  responsePanelSections: ResponsePanelSection[];
+  addResponsePanelSection: (section: ResponsePanelSection) => void;
 }
 
 export const usePluginStore = create<PluginStoreState>((set) => ({
@@ -305,6 +333,14 @@ export const usePluginStore = create<PluginStoreState>((set) => ({
   addContextMenuItem: (item) => set((state) => ({ contextMenuItems: [...state.contextMenuItems, item] })),
   settingsPageSections: [],
   addSettingsSection: (section) => set((state) => ({ settingsPageSections: [...state.settingsPageSections, section] })),
+  responsePanelSections: [],
+  addResponsePanelSection: (section) =>
+    set((state) => ({
+      responsePanelSections: [
+        ...state.responsePanelSections.filter((s) => s.id !== section.id),
+        section,
+      ],
+    })),
 }));
 
 interface EditorEnhancementStore {
@@ -409,7 +445,7 @@ if (typeof window !== 'undefined') {
     "@codemirror/autocomplete": _CodeMirrorAutocomplete,
     // @/core/* — host app internals exposed for OTA-loaded plugin bundles
     "@/core/file-system/hooks/useFileSystem": { prosemirrorToMarkdown },
-    "@/core/editors/voiden/extensions": { voidenExtensions: coreVoidenExtensions },
+    "@/core/editors/voiden/extensions": { voidenExtensions: coreVoidenExtensions, registerCustomVariableHighlighter },
     "@/core/editors/voiden/VoidenEditor": { useEditorStore, useVoidenEditorStore, proseClasses },
     "@/core/editors/voiden/utils/expandLinkedBlocks": { expandLinkedBlocksInDoc },
     "@/core/editors/voiden/markdownConverter": { parseMarkdown },
@@ -571,6 +607,19 @@ export const createPlugin = (
     exposeHelpers: (helpers: PluginHelpers) => {
       extensionLogger.info(`Plugin "${extensionId}" exposing helpers:`, Object.keys(helpers));
       exposedHelpers[extensionId] = helpers;
+    },
+    /**
+     * Register a section to display inside the response panel.
+     * The core renders all registered sections generically — no plugin IDs
+     * are hardcoded in ResponsePanelContainer.
+     */
+    registerResponsePanelSection: (section: ResponsePanelSection) => {
+      extensionLogger.info(`Plugin "${extensionId}" registering response panel section: ${section.id}`);
+      usePluginStore.getState().addResponsePanelSection(section);
+    },
+    registerVariableHighlighter: (rule: CustomVariableHighlighterRule) => {
+      extensionLogger.info(`Plugin "${extensionId}" registering variable highlighter: prefix="${rule.prefix}"`);
+      registerCustomVariableHighlighter(rule);
     },
     registerSidebarTab: (sidebarId: "left" | "right", tab: Tab) => {
       if (tab.component) tab = { ...tab, component: tagComponent(extensionId, tab.component) };
@@ -1209,6 +1258,7 @@ export const getPlugins = async () => {
     contextMenuItems: [],
     settingsPageSections: [],
     panels: { main: [], bottom: [] },
+    responsePanelSections: [],
   });
   pluginEventBus.clear();
   Object.keys(exposedHelpers).forEach(key => delete exposedHelpers[key]);
