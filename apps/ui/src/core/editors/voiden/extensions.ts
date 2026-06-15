@@ -2,6 +2,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { SlashCommand } from "./SlashCommand";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { EditorView } from "@tiptap/pm/view";
+import { pasteOrchestrator } from "@/core/paste/pasteOrchestrator";
 import Image from "@tiptap/extension-image";
 import { CustomTable } from "./nodes/CustomTable";
 import { CustomTableHeader } from "./nodes/CustomTableHeader";
@@ -10,7 +11,7 @@ import TableCell from "@tiptap/extension-table-cell";
 import { CustomCodeBlock } from "./nodes/CustomCodeBlock";
 import { VariableCapture } from "./nodes/VariableCapture";
 import { CustomPlaceholder } from "./extensions/CustomPlaceholder";
-import { AnyExtension, Extension, PasteRule } from "@tiptap/core";
+import { AnyExtension, Extension, InputRule, PasteRule } from "@tiptap/core";
 import Dropcursor from "@tiptap/extension-dropcursor";
 import { FileLink } from "./extensions/ExternalFile";
 import { LinkedBlock } from "./extensions/BlockLink";
@@ -27,38 +28,77 @@ import { cmdAll } from "./extensions/cmdAll";
 import { RequestSeparatorNode } from "./nodes/RequestSeparatorNode";
 import { TableCellAutocomplete } from "./extensions/TableCellAutocomplete";
 
-// Extension to prevent markdown input rules in table cells
+// Extension to prevent markdown input rules in table cells and registered Voiden blocks.
+//
+// WHY addInputRules and not handleTextInput:
+// TipTap builds one shared inputRulesPlugin and places it BEFORE all extension plugins
+// in ProseMirror's plugin array. That means handleTextInput added by an extension
+// (even at priority 10000) always runs AFTER the inputRulesPlugin's handleTextInput —
+// too late to stop italic/bold/code rules from firing. The only way to win is to add
+// our own rules into the same inputRulesPlugin at the front of the rule list (which
+// is determined by extension priority). A catch-all rule that runs first and absorbs
+// any typed character inside Voiden blocks / table cells prevents later rules from
+// ever seeing those characters.
 const DisableMarkdownInTables = Extension.create({
   name: 'disableMarkdownInTables',
   priority: 10000,
 
-  addProseMirrorPlugins() {
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const ext = this;
+  addInputRules() {
+    return [
+      new InputRule({
+        // Match any single character at the end of the text block content.
+        // /[\s\S]$/ captures even newlines so we can explicitly skip Enter.
+        find: /[\s\S]$/,
+        handler: ({ state, range, match }) => {
+          const text = match[0];
 
+          // Let Enter be handled by node keyboard shortcuts instead.
+          if (text === '\n') return null;
+
+          const { $from } = state.selection;
+          for (let d = $from.depth; d > 0; d--) {
+            const node = $from.node(d);
+            if (
+              node.type.name === 'tableCell' ||
+              node.type.name === 'tableHeader' ||
+              pasteOrchestrator.isRegisteredBlockType(node.type.name)
+            ) {
+              // Insert the character as plain text.
+              // A non-null return with steps on the transaction causes
+              // inputRulesPlugin to mark this event as "matched", which stops
+              // all subsequent rules (italic, bold, code, heading, etc.)
+              // from running for this keystroke.
+              state.tr.insertText(text, range.from, range.to);
+              return; // void (not null) = handled
+            }
+          }
+
+          return null; // Outside restricted context — let other rules apply.
+        },
+      }),
+    ];
+  },
+
+  addProseMirrorPlugins() {
     return [
       new Plugin({
         key: new PluginKey('disableMarkdownInTables'),
         props: {
-          // Intercept text input (space bar, regular typing)
+          // Fallback: intercepts paste inside table cells / Voiden blocks so
+          // pasted text is inserted as plain text (no markdown conversion).
           handleTextInput(view, from, to, text) {
             const { $from } = view.state.selection;
 
-            // Check if we're inside a table cell
-            let insideTableCell = false;
             for (let d = $from.depth; d > 0; d--) {
               const node = $from.node(d);
-              if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
-                insideTableCell = true;
-                break;
+              if (
+                node.type.name === 'tableCell' ||
+                node.type.name === 'tableHeader' ||
+                pasteOrchestrator.isRegisteredBlockType(node.type.name)
+              ) {
+                view.dispatch(view.state.tr.insertText(text, from, to));
+                return true;
               }
-            }
-
-            if (insideTableCell) {
-              // Insert text directly, bypassing all input rules (markdown transformations)
-              const tr = view.state.tr.insertText(text, from, to);
-              view.dispatch(tr);
-              return true; // Prevent further processing
             }
 
             return false;
@@ -66,11 +106,6 @@ const DisableMarkdownInTables = Extension.create({
         },
       }),
     ];
-  },
-
-  // Override input rules to disable them when inside table cells
-  addInputRules() {
-    return [];
   },
 });
 
