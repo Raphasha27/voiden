@@ -466,10 +466,22 @@ const getLinuxIcon = () => {
   return iconPath;
 };
 
-export async function createWindow(): Promise<BrowserWindow> {
+export interface InitialWindowBounds {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  isMaximized?: boolean;
+  isFullScreen?: boolean;
+}
+
+export async function createWindow(initialBounds?: InitialWindowBounds): Promise<BrowserWindow> {
   const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: initialBounds?.width ?? 1200,
+    height: initialBounds?.height ?? 800,
+    ...(initialBounds?.x != null && initialBounds?.y != null
+      ? { x: initialBounds.x, y: initialBounds.y }
+      : {}),
     minHeight: 384,
     minWidth: 384,
     webPreferences: {
@@ -488,8 +500,34 @@ export async function createWindow(): Promise<BrowserWindow> {
     } : { frame: false })
   });
   mainWindow.on("ready-to-show", () => {
+    // Reapply size before show() — on macOS the OS can silently adjust window
+    // dimensions between construction and ready-to-show, so we set them again
+    // here to guarantee the saved size takes effect without a visible resize.
+    if (initialBounds?.width && initialBounds?.height) {
+      mainWindow.setBounds({
+        width: initialBounds.width,
+        height: initialBounds.height,
+        ...(initialBounds.x != null ? { x: initialBounds.x } : {}),
+        ...(initialBounds.y != null ? { y: initialBounds.y } : {}),
+      }, false);
+    }
+
+    // Restore zoom state before show() so the window is already at its saved
+    // size when it first appears — no visible flash from normal→zoomed.
+    // On macOS, maximize() on a hidden window sets the frame to the work area
+    // directly (no animation), so the user sees it correctly from the start.
+    if (initialBounds?.isMaximized) {
+      mainWindow.maximize();
+    }
+
     splash?.destroy();
     mainWindow.show();
+
+    // Full-screen must come after show() because entering a macOS Space
+    // requires the window to already be visible.
+    if (initialBounds?.isFullScreen) {
+      mainWindow.setFullScreen(true);
+    }
   });
   EventBus.registerWindow(mainWindow);
   // Clear Electron's cache in development to ensure fresh UI loads
