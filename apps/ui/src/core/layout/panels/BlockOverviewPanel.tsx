@@ -76,7 +76,9 @@ function resolveBlockMeta(type: string): { label: string; Icon: React.ElementTyp
   return CORE_BLOCK_META[type] ?? { label: type, Icon: Box };
 }
 
-const SKIP_TYPES = new Set(["request-separator", "title", "method", "url"]);
+// Only core document node types that should never appear as block cards.
+// Plugin-owned internal nodes declare themselves skippable via { skip: true } in registerBlockOutlineMeta.
+const SKIP_TYPES = new Set(["request-separator", "title"]);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -127,7 +129,9 @@ export const BlockOverviewPanel: React.FC = () => {
     };
 
     const processNode = (node: ProseMirrorNode, nodePos: number) => {
+      if (SKIP_TYPES.has(node.type.name)) return;
       const outlineMeta = getBlockOutlineMeta(node.type.name);
+      if (outlineMeta?.skip) return;
       if (outlineMeta?.asSectionField) {
         const fieldResult = outlineMeta.asSectionField(node.attrs, node.textContent.trim());
         if (fieldResult) current[fieldResult.field] = fieldResult.value;
@@ -136,7 +140,7 @@ export const BlockOverviewPanel: React.FC = () => {
         node.forEach((child: ProseMirrorNode, childOffset: number) => {
           processNode(child, nodePos + childOffset + 1);
         });
-      } else if (!SKIP_TYPES.has(node.type.name)) {
+      } else {
         current.blocks.push(buildBlockInfo(node, nodePos));
       }
     };

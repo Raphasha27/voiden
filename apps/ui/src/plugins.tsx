@@ -425,6 +425,12 @@ export interface BlockOutlineMeta {
    * node itself as a block card. Use this for wrapper nodes like `request` that own `method`+`url`.
    */
   transparent?: boolean;
+  /**
+   * If true, this node is silently skipped in the Block Overview panel — no card, no descent.
+   * Use this for internal child nodes that are owned by a container block and should never
+   * appear as standalone entries (e.g. `method`, `url` inside a `request` container).
+   */
+  skip?: boolean;
 }
 const blockOutlineRegistry = new Map<string, BlockOutlineMeta>();
 
