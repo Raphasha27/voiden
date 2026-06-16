@@ -7,6 +7,7 @@ import * as semver from "semver";
 import * as https from "https";
 import { execFile } from "child_process";
 import { windowManager } from "./windowManager";
+import { saveSettings } from "./settings";
 
 // ---------- Updater logger ----------
 

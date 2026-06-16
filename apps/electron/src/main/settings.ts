@@ -57,6 +57,10 @@ export type Settings = {
     enabled?: boolean;
     retention_days?: number;
   };
+  ui?: {
+    last_seen_version?: string;
+    show_whats_new_after_update?: boolean;
+  };
 };
 
 const userFile = path.join(app.getPath("userData"), "settings.json");
