@@ -528,19 +528,22 @@ export async function sendRequestHybrid(
     // ========================================
     // UI PROCESS - Stage 8: Post-processing
     // ========================================
-    await hookRegistry.executeHooks(PipelineStage.PostProcessing, {
-      requestState,
-      responseState,
-      metadata,
-    });
+    // Capture runtime variables BEFORE running post-processing hooks so that
+    // post_script can read the current response's captured values via voiden.variables.get().
     const state = await window.electron?.state.get();
     const path = state.activeDirectory || '';
     let editorJson: JSONContent | undefined = editor?.getJSON();
     editorJson = await expandLinkedBlocksInDoc(editorJson, { forceRefresh: true });
     const captureArray = await getRuntimeVariablesMap(editorJson, undefined);
-    if (captureArray || [].length > 0) {
+    if (captureArray?.length > 0) {
       await saveRuntimeVariables(requestState, responseState, captureArray, path);
     }
+
+    await hookRegistry.executeHooks(PipelineStage.PostProcessing, {
+      requestState,
+      responseState,
+      metadata,
+    });
 
     // Build final response
     return buildBaseResponseFromPipeline(responseState, request.preRequestResult);

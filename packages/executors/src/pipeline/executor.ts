@@ -157,11 +157,13 @@ export async function executeRequestPipeline(
         metadata: baseResponse.metadata ?? {},
       }
 
+      // Save runtime variables before hooks so post_script reads current response values
+      await _saveRuntimeVars(ipcAdapter, editor, requestState, responseState)
+
       await hookRegistry.executeHooks(PipelineStage.PostProcessing, {
         requestState, responseState, metadata,
       })
 
-      await _saveRuntimeVars(ipcAdapter, editor, requestState, responseState)
       return {
         ...baseResponse,
         requestHeaders: requestState.headers.filter(h => h.enabled !== false),
@@ -188,11 +190,12 @@ export async function executeRequestPipeline(
     }
 
     // ── Stage 8: Post-processing ──────────────────────────────────────────────
+    // Save runtime variables before hooks so post_script reads current response values
+    await _saveRuntimeVars(ipcAdapter, editor, requestState, responseState)
+
     await hookRegistry.executeHooks(PipelineStage.PostProcessing, {
       requestState, responseState, metadata,
     })
-
-    await _saveRuntimeVars(ipcAdapter, editor, requestState, responseState)
 
     return {
       statusCode: responseState.status,
