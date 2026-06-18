@@ -181,7 +181,7 @@ Looking for newer builds? Check the early access section on [voiden.md/download]
 
 For a guided first run, see the [Voiden quick start](https://docs.voiden.md/docs/getting-started-section/getting-started/quick-start).
 
-### Coming from Postman
+### Coming from Postman and other tools?
 
 If you already use Postman, you can bring your existing collections with you:
 
@@ -189,7 +189,11 @@ If you already use Postman, you can bring your existing collections with you:
 2. Drag the exported JSON file into the Voiden file list on the left panel.
 3. Open the imported file and click **Generate Voiden Files** to create a folder of native `.void` files — one per request, with headers, auth, query params, path variables, bodies, and response examples preserved.
 
-Full walkthrough: [Postman Imports](https://docs.voiden.md/docs/getting-started-section/getting-started/postman-import). [OpenAPI Imports](https://docs.voiden.md/docs/getting-started-section/getting-started/openapi-imports). [Insomnia Imports](https://docs.voiden.md/docs/getting-started-section/getting-started/insomnia-imports)
+Full walkthrough: [Postman Imports](https://docs.voiden.md/docs/getting-started-section/getting-started/postman-import). 
+
+Using Swagger or Insomnia? 
+
+[OpenAPI Imports](https://docs.voiden.md/docs/getting-started-section/getting-started/openapi-imports). [Insomnia Imports](https://docs.voiden.md/docs/getting-started-section/getting-started/insomnia-imports)
 
 ## What you can do
 
