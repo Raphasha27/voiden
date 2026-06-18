@@ -109,7 +109,7 @@ AI Friendly:
 - No proprietary workspace. No binary exports. Pure text all the way down, diffable like code, greppable, AI-editable, and merge-friendly.
 - Supports Voiden skills for Claude and Codex agents.
 
-Voiden Runner: A headless CLI for running those .void files outside the desktop app, directly in the terminal.
+[Voiden Runner](https://github.com/VoidenHQ/voiden/tree/beta/packages/voiden-runner): A headless CLI for running those .void files outside the desktop app, directly in the terminal.
 
 - runs on Node.js 18+
 - works in terminal, CI/CD, Docker, and cron jobs
