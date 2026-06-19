@@ -12,6 +12,10 @@ import { RestApiRequestState, RestApiResponseState } from "./pipeline/types";
 import { hookRegistry, PipelineStage } from "./pipeline";
 import { Buffer } from "buffer";
 import { preSendProcessHook, replaceProcessVariablesInText, saveRuntimeVariables } from "./runtimeVariables";
+import {
+  assertNoUnresolvedVariablesInOutgoingRequest,
+  UnresolvedVariablesError,
+} from "./utils/collectUnresolvedVariables";
 import { get } from "http";
 import { getRuntimeVariablesMap } from "./getRequestFromJson";
 import { expandLinkedBlocksInDoc } from "../editors/voiden/utils/expandLinkedBlocks";
@@ -382,6 +386,8 @@ export async function sendRequestHybrid(
       throw new Error(`Pre-request script error: ${requestState.metadata.preScriptError}`);
     }
 
+    assertNoUnresolvedVariablesInOutgoingRequest(requestState);
+
     // ========================================
     // ELECTRON PROCESS - Stages 3, 4, 6, 7
     // ========================================
@@ -548,6 +554,10 @@ export async function sendRequestHybrid(
     // Build final response
     return buildBaseResponseFromPipeline(responseState, request.preRequestResult);
   } catch (error) {
+    if (error instanceof UnresolvedVariablesError) {
+      throw error;
+    }
+
     const errorResponse: BaseResponse = {
       statusCode: 0,
       statusMessage: "",
