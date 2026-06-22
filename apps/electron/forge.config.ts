@@ -68,6 +68,8 @@ releaseDate: '${releaseDate}'
 const releaseChannel = process.env.RELEASE_CHANNEL || (isBetaBuild ? "beta" : "stable");
 const s3BucketName = releaseChannel === "beta"
   ? process.env.S3_BUCKET_NAME_BETA || "voiden-beta-releases"
+  : releaseChannel === "development"
+  ? process.env.S3_BUCKET_NAME_DEV || "voiden-dev-releases"
   : process.env.S3_BUCKET_NAME_STABLE || "voiden-releases";
 const s3Region = process.env.S3_REGION || "eu-west-1";
 

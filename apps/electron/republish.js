@@ -28,6 +28,8 @@ const RPM_BUILD_DIR = process.env.RPM_BUILD_DIR || "./out/make/rpm/x64";
 const APPIMAGE_BUILD_DIR = process.env.APPIMAGE_BUILD_DIR || "./out/make";
 const S3_BUCKET = releaseChannel === "beta"
   ? process.env.S3_BUCKET_NAME_BETA || "voiden-releases-beta"
+  : releaseChannel === "development"
+  ? process.env.S3_BUCKET_NAME_DEV || "voiden-dev-releases"
   : process.env.S3_BUCKET_NAME_STABLE || "voiden-releases-stable";
 const S3_REGION = process.env.S3_REGION || "eu-west-1";
 const S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID;
@@ -73,7 +75,7 @@ if (PLATFORM === "linux") {
     console.warn(`Warning: Could not find AppImage file with version ${APP_VERSION}`);
   }
 
-  const channelPath = releaseChannel === "beta" ? "beta" : "stable";
+  const channelPath = releaseChannel;
   const debUrl = `https://voiden.md/api/download/${channelPath}/linux/x64/${deb}`;
   const rpmUrl = `https://voiden.md/api/download/${channelPath}/linux/x64/${rpm}`;
   const appimageUrl = appimage ? `https://voiden.md/api/download/${channelPath}/linux/x64/${appimage}` : undefined;
@@ -106,7 +108,7 @@ if (PLATFORM === "linux") {
     console.debug("Uploaded latest.json to:", data.Location);
   });
 } else if (PLATFORM === "win32") {
-  const channelPath = releaseChannel === "beta" ? "beta" : "stable";
+  const channelPath = releaseChannel;
   const WIN_BUILD_DIR = process.env.BUILD_DIR || "./out/make/squirrel.windows/x64";
   const files = fs.readdirSync(WIN_BUILD_DIR).filter(file => file.endsWith(".exe"));
   if (files.length === 0) {
