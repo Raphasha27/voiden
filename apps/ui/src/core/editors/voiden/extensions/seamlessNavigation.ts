@@ -2,6 +2,7 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { TextSelection } from '@tiptap/pm/state';
 import { CellSelection } from '@tiptap/pm/tables';
+import { isSlashMenuOpen } from '../SlashCommand';
 
 /**
  * Seamless Navigation Extension
@@ -42,6 +43,12 @@ export const SeamlessNavigation = Extension.create({
               // arrow keys can't move the cursor past them
               if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') &&
                   !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+                // The slash command popover should own up/down navigation while it's open —
+                // don't also try to move the editor cursor between blocks.
+                if (isSlashMenuOpen()) {
+                  return false;
+                }
+
                 const oldPos = view.state.selection.$anchor.pos;
                 const isDown = event.key === 'ArrowDown';
 
