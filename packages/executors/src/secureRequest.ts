@@ -15,6 +15,7 @@ import { extname } from 'node:path'
 import type { RestApiRequestState } from './pipeline/types.js'
 import { executeWebSocket } from './websocket.js'
 import { executeGrpc } from './grpc.js'
+import { assertNoUnresolvedTemplates } from './unresolvedVariables.js'
 
 // ─── Adapter interface ────────────────────────────────────────────────────────
 
@@ -121,6 +122,18 @@ export function getFileMimeType(filePath: string): string {
   return mime[ext] ?? 'application/octet-stream'
 }
 
+function validateResolvedOutgoing(
+  url: string,
+  headers: Record<string, string>,
+  body?: string,
+  extra: string[] = [],
+): void {
+  const parts: string[] = [url]
+  if (body) parts.push(body)
+  parts.push(...Object.keys(headers), ...Object.values(headers), ...extra)
+  assertNoUnresolvedTemplates(parts)
+}
+
 // ─── Main executor ────────────────────────────────────────────────────────────
 
 export async function executeSecureRequest(
@@ -165,6 +178,8 @@ export async function executeSecureRequest(
 
   // ── 6. Ensure URL has a protocol prefix ──────────────────────────────────
   if (!url.match(/^(https?|wss?|grpcs?):\/\//i)) url = `http://${url}`
+
+  validateResolvedOutgoing(url, headers, body)
 
   // ── 7. Protocol detection — hand off WS / gRPC / GQL-sub to caller ───────
   const proto = new URL(url).protocol
@@ -270,10 +285,12 @@ export async function executeSecureRequest(
       fetchOptions.body = formData
       deleteHttpHeader(headers, 'Content-Type')
     } else if (typeof requestState.binary === 'string') {
-      if (!adapter.readFile) throw new Error(`Binary file upload requires adapter.readFile (path: ${requestState.binary})`)
-      const fileBuffer = await adapter.readFile(requestState.binary)
+      const resolvedBinaryPath = await rv(requestState.binary)
+      validateResolvedOutgoing(url, headers, body, [resolvedBinaryPath])
+      if (!adapter.readFile) throw new Error(`Binary file upload requires adapter.readFile (path: ${resolvedBinaryPath})`)
+      const fileBuffer = await adapter.readFile(resolvedBinaryPath)
       fetchOptions.body = fileBuffer
-      if (!hasHttpHeader(headers, 'Content-Type')) headers['Content-Type'] = getFileMimeType(requestState.binary)
+      if (!hasHttpHeader(headers, 'Content-Type')) headers['Content-Type'] = getFileMimeType(resolvedBinaryPath)
     } else {
       const bin = requestState.binary as any
       if (typeof bin.arrayBuffer === 'function') fetchOptions.body = Buffer.from(await bin.arrayBuffer())
@@ -282,6 +299,7 @@ export async function executeSecureRequest(
     }
   } else if (requestState.bodyParams?.length) {
     const bodyParams = requestState.bodyParams as any[]
+    const resolvedBodyParamTexts: string[] = []
 
     if (requestState.contentType === 'multipart/form-data') {
       const formData = new FormData()
@@ -289,13 +307,16 @@ export async function executeSecureRequest(
         if (p.enabled === false) continue
         if (p.type === 'file' && p.value) {
           if (!adapter.readFile) throw new Error('Multipart file upload requires adapter.readFile')
-          const filePath = p.value as string
+          const filePath = await rv(p.value as string)
+          resolvedBodyParamTexts.push(filePath)
           const fileBuffer = await adapter.readFile(filePath)
           const fileName = filePath.split('/').pop() ?? 'file'
           const blob = new Blob([fileBuffer], { type: getFileMimeType(filePath) })
           formData.append(p.key, blob, fileName)
         } else if (p.type === 'text') {
-          formData.append(p.key, await rv(p.value as string))
+          const resolvedValue = await rv(p.value as string)
+          resolvedBodyParamTexts.push(resolvedValue)
+          formData.append(p.key, resolvedValue)
         }
       }
       fetchOptions.body = formData
@@ -304,12 +325,16 @@ export async function executeSecureRequest(
       const params = new URLSearchParams()
       for (const p of bodyParams) {
         if (p.enabled !== false && p.type === 'text') {
-          params.append(p.key, await rv(p.value as string))
+          const resolvedValue = await rv(p.value as string)
+          resolvedBodyParamTexts.push(resolvedValue)
+          params.append(p.key, resolvedValue)
         }
       }
       fetchOptions.body = params.toString()
       if (!hasHttpHeader(headers, 'Content-Type')) headers['Content-Type'] = 'application/x-www-form-urlencoded'
     }
+
+    validateResolvedOutgoing(url, headers, body, resolvedBodyParamTexts)
   } else if (requestState.method !== 'GET' && body) {
     fetchOptions.body = body
     if (requestState.contentType && !hasHttpHeader(headers, 'Content-Type')) {

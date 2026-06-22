@@ -6,6 +6,13 @@ export { executeGrpc } from './grpc.js'
 export type { SecureRequestAdapter, SecureHandoffResult, SecureHttpResult, SecureRequestResult } from './secureRequest.js'
 export { executeSecureRequest, hasHttpHeader, deleteHttpHeader, addDefaultHttpHeaders, getFileMimeType } from './secureRequest.js'
 
+export {
+  UnresolvedVariablesError,
+  assertNoUnresolvedTemplates,
+  formatUnresolvedVariablesError,
+  validateResolvedStrings,
+} from './unresolvedVariables.js'
+
 export * from './pipeline/index.js'
 
 export type { HeadlessEditor, RequestBuildHandler, ResponseProcessHandler } from './orchestrator.js'

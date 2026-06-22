@@ -66,13 +66,32 @@ function restRequest(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("sendRequestHybrid unresolved variable validation", () => {
+describe("sendRequestHybrid unresolved variable handling", () => {
   beforeEach(() => {
     sendSecure.mockClear();
     mockElectron.variables.readMerged.mockResolvedValue({});
   });
 
-  it("voiden test : blocks send when unresolved environment template remains in URL", async () => {
+  it("voiden test : does not block raw env templates before sendSecure", async () => {
+    const response = await sendRequestHybrid(
+      restRequest({ url: "https://{{HOST}}/health" }),
+      createMockEditor(),
+      undefined,
+      mockElectron,
+    );
+
+    expect(sendSecure).toHaveBeenCalledTimes(1);
+    expect(response?.statusCode).toBe(200);
+  });
+
+  it("voiden test : throws when sendSecure reports unresolved variables after substitution", async () => {
+    sendSecure.mockResolvedValueOnce({
+      status: 0,
+      statusText: "Cannot send request: unresolved environment variable(s): `MISSING_HOST`. Add them to your active environment or fix the spelling.",
+      error: "Cannot send request: unresolved environment variable(s): `MISSING_HOST`. Add them to your active environment or fix the spelling.",
+      headers: [],
+    });
+
     await expect(
       sendRequestHybrid(
         restRequest({ url: "https://{{MISSING_HOST}}/health" }),
@@ -81,70 +100,5 @@ describe("sendRequestHybrid unresolved variable validation", () => {
         mockElectron,
       ),
     ).rejects.toBeInstanceOf(UnresolvedVariablesError);
-
-    expect(sendSecure).not.toHaveBeenCalled();
-  });
-
-  it("voiden test : allows send when only capture and faker templates remain", async () => {
-    const response = await sendRequestHybrid(
-      restRequest({
-        url: "https://api.example.com/{{$req.path}}",
-        headers: [{ key: "X-Fake", value: "{{$faker.name}}", enabled: true }],
-      }),
-      createMockEditor(),
-      undefined,
-      mockElectron,
-    );
-
-    expect(sendSecure).toHaveBeenCalledTimes(1);
-    expect(response?.statusCode).toBe(200);
-  });
-
-  it("voiden test : does not block editor-only process refs after preSendProcessHook substitutes them", async () => {
-    mockElectron.variables.readMerged.mockResolvedValue({ access_token: "secret-token" });
-
-    const response = await sendRequestHybrid(
-      restRequest({
-        url: "https://api.example.com/users",
-        headers: [{ key: "Authorization", value: "Bearer {{process.access_token}}", enabled: true }],
-      }),
-      createMockEditor(),
-      undefined,
-      mockElectron,
-    );
-
-    expect(sendSecure).toHaveBeenCalledTimes(1);
-    expect(sendSecure.mock.calls[0][0].headers[0].value).toBe("Bearer secret-token");
-    expect(response?.statusCode).toBe(200);
-  });
-
-  it("voiden test : blocks when process template survives preSendProcessHook", async () => {
-    await expect(
-      sendRequestHybrid(
-        restRequest({
-          url: "https://api.example.com",
-          headers: [{ key: "Authorization", value: "Bearer {{process.missing_token}}", enabled: true }],
-        }),
-        createMockEditor(),
-        undefined,
-        mockElectron,
-      ),
-    ).rejects.toBeInstanceOf(UnresolvedVariablesError);
-
-    expect(sendSecure).not.toHaveBeenCalled();
-  });
-
-  it("voiden test : validates expanded linked-block URL in built request state", async () => {
-    await expect(
-      sendRequestHybrid(
-        restRequest({ url: "https://{{LINKED_SERVICE_HOST}}/v1/items" }),
-        createMockEditor(),
-        undefined,
-        mockElectron,
-      ),
-    ).rejects.toMatchObject({
-      name: "UnresolvedVariablesError",
-      unresolved: ["LINKED_SERVICE_HOST"],
-    });
   });
 });

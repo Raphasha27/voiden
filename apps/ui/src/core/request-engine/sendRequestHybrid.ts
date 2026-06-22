@@ -12,10 +12,7 @@ import { RestApiRequestState, RestApiResponseState } from "./pipeline/types";
 import { hookRegistry, PipelineStage } from "./pipeline";
 import { Buffer } from "buffer";
 import { preSendProcessHook, replaceProcessVariablesInText, saveRuntimeVariables } from "./runtimeVariables";
-import {
-  assertNoUnresolvedVariablesInOutgoingRequest,
-  UnresolvedVariablesError,
-} from "./utils/collectUnresolvedVariables";
+import { UnresolvedVariablesError } from "./utils/collectUnresolvedVariables";
 import { get } from "http";
 import { getRuntimeVariablesMap } from "./getRequestFromJson";
 import { expandLinkedBlocksInDoc } from "../editors/voiden/utils/expandLinkedBlocks";
@@ -386,8 +383,6 @@ export async function sendRequestHybrid(
       throw new Error(`Pre-request script error: ${requestState.metadata.preScriptError}`);
     }
 
-    assertNoUnresolvedVariablesInOutgoingRequest(requestState);
-
     // ========================================
     // ELECTRON PROCESS - Stages 3, 4, 6, 7
     // ========================================
@@ -400,6 +395,14 @@ export async function sendRequestHybrid(
       requestState,
       signal ? { aborted: signal.aborted } : undefined
     );
+
+    if (
+      electronResponse?.error &&
+      typeof electronResponse.error === "string" &&
+      electronResponse.error.startsWith("Cannot send request: unresolved")
+    ) {
+      throw new UnresolvedVariablesError(electronResponse.error, []);
+    }
 
     // Check if request failed
     if (!electronResponse.status && electronResponse.statusText) {
