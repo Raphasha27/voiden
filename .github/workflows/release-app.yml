@@ -66,8 +66,12 @@ jobs:
             arch_flag: ''
             artifact_name: darwin-arm64
 
+          # Cross-packaged on the arm64 runner via --arch=x64 — GitHub's free plan
+          # no longer has a standalone Intel macOS runner pool (macos-13 is retired;
+          # Intel "large" runners require a paid Team/Enterprise plan). Packaging,
+          # codesigning, and notarization don't need native x64 hardware to run.
           - label: macOS Intel (x64)
-            os: macos-13
+            os: macos-latest
             arch_flag: '--arch=x64'
             artifact_name: darwin-x64
 
