@@ -35,12 +35,14 @@ export interface CaptureRequest {
 }
 
 export interface CaptureResponse {
-  status?:          number
-  statusText?:      string
-  responseHeaders?: Record<string, string>
-  body?:            string
-  durationMs?:      number
-  size?:            number
+  status?:              number
+  statusText?:          string
+  responseHeaders?:     Record<string, string>
+  /** Raw header list preserving duplicate set-cookie entries. Takes precedence over responseHeaders when building the headers path for byPath. */
+  responseHeaderList?:  Array<{ key: string; value: string }>
+  body?:                string
+  durationMs?:          number
+  size?:                number
 }
 
 // ─── Block extraction ─────────────────────────────────────────────────────────
@@ -118,6 +120,29 @@ function toKvArray(obj?: Record<string, string>): { key: string; value: string }
   return Object.entries(obj).map(([key, value]) => ({ key, value }))
 }
 
+/** Parse set-cookie header entries into a cookie-name → attributes map. */
+function parseSetCookies(arr: Array<{ key: string; value: string }>): Record<string, Record<string, any>> {
+  const cookies: Record<string, Record<string, any>> = {}
+  arr
+    .filter(h => h.key.toLowerCase() === 'set-cookie')
+    .forEach(h => {
+      const parts = h.value.split(';').map(p => p.trim())
+      if (!parts[0]) return
+      const eq = parts[0].indexOf('=')
+      const name = (eq !== -1 ? parts[0].substring(0, eq) : parts[0]).trim()
+      if (!name) return
+      const value = eq !== -1 ? parts[0].substring(eq + 1).trim() : ''
+      const attrs: Record<string, any> = { value }
+      for (let i = 1; i < parts.length; i++) {
+        const aeq = parts[i].indexOf('=')
+        if (aeq === -1) attrs[parts[i]] = true
+        else attrs[parts[i].substring(0, aeq).trim()] = parts[i].substring(aeq + 1).trim()
+      }
+      cookies[name] = attrs
+    })
+  return cookies
+}
+
 /**
  * Extract a value by dot-notation path from a nested object or {key,value}[] array.
  * Supports: `body.data.id`, `headers.Authorization`, `items[0].name`
@@ -143,7 +168,12 @@ function byPath(obj: any, path: string): any {
 
     // Key-value array (headers, queryParams, etc.)
     if (Array.isArray(cur) && cur[0] != null && 'key' in cur[0]) {
-      cur = kvFind(cur, raw)
+      // set-cookie needs cookie-name navigation; parse all entries into a structured map
+      if (raw.toLowerCase() === 'set-cookie') {
+        cur = parseSetCookies(cur)
+      } else {
+        cur = kvFind(cur, raw)
+      }
       continue
     }
 
@@ -171,11 +201,13 @@ function evalExpr(expr: string, req: CaptureRequest, res: CaptureResponse): any 
   const [, source, path] = m
 
   if (source === 'res') {
+    // Prefer the raw list (preserves multiple set-cookie entries) over the collapsed Record
+    const headers = res.responseHeaderList ?? toKvArray(res.responseHeaders)
     return byPath({
       status:     res.status,
       statusText: res.statusText,
       body:       tryJson(res.body),
-      headers:    toKvArray(res.responseHeaders),
+      headers,
       time:       res.durationMs,
       size:       res.size,
     }, path)

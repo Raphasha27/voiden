@@ -24,6 +24,7 @@ import { createCliElectron } from './cliElectron.js'
 import { loadEnabledPlugins } from './plugins/loader.js'
 import { normalizeBlocks } from './blockSchemaRegistry.js'
 import { extractRuntimeVarRows, captureRuntimeVars } from './runtimeVars.js'
+import type { CaptureRequest, CaptureResponse } from './runtimeVars.js'
 import type { RunResult } from './types.js'
 
 // ─── Raw request extraction from blocks (used for error reporting) ────────────
@@ -261,7 +262,24 @@ export async function runVoidFile(
     //    These are immediately available to the next section via {{process.xxx}}.
     const captureRows = extractRuntimeVarRows(normalizedBlocks)
     if (captureRows.length > 0) {
-      captureRuntimeVars(captureRows, runResult, runResult, runtimeVars)
+      // Pass req and res as separate objects; include the raw header list on the
+      // response side so duplicate set-cookie headers are not collapsed.
+      const captureReq: CaptureRequest = {
+        url:             runResult.url,
+        method:          runResult.method,
+        requestHeaders:  runResult.requestHeaders,
+        requestBody:     runResult.requestBody,
+      }
+      const captureRes: CaptureResponse = {
+        status:             runResult.status,
+        statusText:         runResult.statusText,
+        responseHeaders:    runResult.responseHeaders,
+        responseHeaderList: response.headers,
+        body:               runResult.body,
+        durationMs:         runResult.durationMs,
+        size:               runResult.size,
+      }
+      captureRuntimeVars(captureRows, captureReq, captureRes, runtimeVars)
     }
   }
 

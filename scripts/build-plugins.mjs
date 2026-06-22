@@ -107,6 +107,8 @@ export const { CompletionContext, CompletionResult, autocompletion,
     // react-dnd / react-dnd-html5-backend — shared instances prevent duplicate HTML5 backend
     'react-dnd': "const _s=window.__voiden_shims__['react-dnd']||{};export default _s;export const {DndContext,DndProvider,DragPreviewImage,DragSource,DropTarget,DragLayer,useDrag,useDrop,useDragLayer,useDragDropManager}=_s;",
     'react-dnd-html5-backend': "const _s=window.__voiden_shims__['react-dnd-html5-backend']||{};export default _s;export const {getEmptyImage,HTML5Backend,NativeTypes}=_s;",
+    // yaml — shared instance so plugins don't bundle their own copy
+    'yaml': "const _s=window.__voiden_shims__['yaml']||{};export default _s;export const {parse,stringify,parseDocument,Document,isDocument,isMap,isPair,isScalar,isSeq,visit}=_s;",
     // @voiden/sdk is NOT shimmed — plugins bundle their own copy from devDependencies.
     // UIExtension is a base class that must be a real constructor (not {}). Shimming it
     // to {} causes "class extends undefined" TypeErrors that silently kill the bundle.
@@ -114,7 +116,7 @@ export const { CompletionContext, CompletionResult, autocompletion,
 
   const CORE_EXPORTS = {
     '@/core/file-system/hooks/useFileSystem': ['prosemirrorToMarkdown'],
-    '@/core/editors/voiden/extensions': ['voidenExtensions'],
+    '@/core/editors/voiden/extensions': ['voidenExtensions', 'registerCustomVariableHighlighter'],
     '@/core/editors/voiden/VoidenEditor': ['useEditorStore', 'useVoidenEditorStore', 'proseClasses'],
     '@/core/editors/voiden/utils/expandLinkedBlocks': ['expandLinkedBlocksInDoc'],
     '@/core/editors/voiden/markdownConverter': ['parseMarkdown'],

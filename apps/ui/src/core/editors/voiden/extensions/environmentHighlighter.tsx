@@ -17,6 +17,34 @@ export function updateEnvironmentKeys(keys: string[]) {
   currentEnvMap = new Map(keys.map(k => [k, '']));
 }
 
+// ── Custom variable highlighter registry ──────────────────────────────────────
+
+export interface CustomVariableHighlighterRule {
+  /** Prefix that triggers this rule, e.g. "scenario" matches {{scenario.myVar}} */
+  prefix: string;
+  /** Human-readable label shown on hover */
+  label: string;
+  /** CSS color string (hex, hsl, rgb) for the token foreground */
+  color: string;
+  /** Background color. Defaults to 15% opacity version of `color`. */
+  bgColor?: string;
+}
+
+export const customVariableRules: CustomVariableHighlighterRule[] = [];
+
+/**
+ * Register a custom variable highlighter rule.
+ * Plugins call this to highlight their own {{prefix.varName}} tokens distinctly.
+ * Calling with the same prefix replaces the existing rule.
+ */
+export function registerCustomVariableHighlighter(rule: CustomVariableHighlighterRule): void {
+  const idx = customVariableRules.findIndex(r => r.prefix === rule.prefix);
+  if (idx >= 0) customVariableRules[idx] = rule;
+  else customVariableRules.push(rule);
+  // Signal all active editors to rebuild decorations immediately.
+  window.dispatchEvent(new CustomEvent('voiden:custom-highlighter-updated'));
+}
+
 /**
  * Find and highlight variables in the document.
  */
@@ -38,13 +66,26 @@ function findVariable(doc: Node): DecorationSet {
       const isFakerVariable = variableName.startsWith('$faker');
       const isVariableCapture = variableName.startsWith('$req') || variableName.startsWith('$res');
 
-      const variableType = isFakerVariable ? "faker" : isVariableCapture ? "capture" : "env";
-      let decorationClass: string;
       const attrs: Record<string, string> = {
         "data-variable": variableName,
-        "data-variable-type": variableType,
       };
 
+      // Check plugin-registered custom prefix rules first
+      const customRule = customVariableRules.find(r => variableName.startsWith(r.prefix + '.') || variableName === r.prefix);
+      if (customRule) {
+        const bg = customRule.bgColor ?? `${customRule.color}26`; // 26 = ~15% opacity in hex
+        attrs.class = "font-mono rounded-sm font-medium text-base";
+        attrs.style = `background-color:${bg};color:${customRule.color};box-shadow:4px 0 0 0 ${bg},-4px 0 0 0 ${bg}`;
+        attrs["data-variable-type"] = "custom";
+        attrs["data-variable-label"] = customRule.label;
+        decorations.push(Decoration.inline(from, to, attrs));
+        return;
+      }
+
+      const variableType = isFakerVariable ? "faker" : isVariableCapture ? "capture" : "env";
+      attrs["data-variable-type"] = variableType;
+
+      let decorationClass: string;
       if (isFakerVariable || isVariableCapture) {
         decorationClass = "font-mono rounded-sm font-medium text-base variable-highlight-faker";
         attrs.class = decorationClass;
@@ -105,8 +146,14 @@ export const environmentHighlighter = (envData: Record<string, string> = {}) => 
               return oldState;
             },
           },
-          // Use view() to schedule debounced full rebuilds after typing pauses
+          // Use view() to schedule debounced full rebuilds after typing pauses,
+          // and to react when a plugin registers a new custom highlighter rule.
           view(editorView) {
+            const onCustomRule = () => {
+              editorView.dispatch(editorView.state.tr.setMeta("forceHighlightUpdate", true));
+            };
+            window.addEventListener('voiden:custom-highlighter-updated', onCustomRule);
+
             return {
               update(view, prevState) {
                 if (view.state.doc.eq(prevState.doc)) return;
@@ -117,6 +164,7 @@ export const environmentHighlighter = (envData: Record<string, string> = {}) => 
                 }, 150);
               },
               destroy() {
+                window.removeEventListener('voiden:custom-highlighter-updated', onCustomRule);
                 if (envHighlightTimer !== null) {
                   clearTimeout(envHighlightTimer);
                   envHighlightTimer = null;

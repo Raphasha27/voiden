@@ -25,6 +25,7 @@ export type Settings = {
   editor: {
     auto_save: boolean;
     auto_save_delay: number; // seconds
+    block_overview: boolean;
   };
   requests: {
     disable_tls_verification: boolean;
@@ -56,6 +57,10 @@ export type Settings = {
   history?: {
     enabled?: boolean;
     retention_days?: number;
+  };
+  ui?: {
+    last_seen_version?: string;
+    show_whats_new_after_update?: boolean;
   };
 };
 

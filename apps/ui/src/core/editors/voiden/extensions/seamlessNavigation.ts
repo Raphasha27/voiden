@@ -38,6 +38,68 @@ export const SeamlessNavigation = Extension.create({
                 modifierKeyPressed = true;
               }
 
+              // Skip non-navigable blocks (e.g., binary file uploads) when
+              // arrow keys can't move the cursor past them
+              if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') &&
+                  !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+                const oldPos = view.state.selection.$anchor.pos;
+                const isDown = event.key === 'ArrowDown';
+
+                setTimeout(() => {
+                  // If cursor moved, ProseMirror handled it — nothing to do
+                  if (view.state.selection.$anchor.pos !== oldPos) return;
+
+                  const { state } = view;
+                  const { doc } = state;
+
+                  // Find which top-level block the cursor is in
+                  let blockStart = 0;
+                  let currentBlockIndex = -1;
+                  for (let i = 0; i < doc.childCount; i++) {
+                    const child = doc.child(i);
+                    const blockEnd = blockStart + child.nodeSize;
+                    if (oldPos >= blockStart && oldPos < blockEnd) {
+                      currentBlockIndex = i;
+                      break;
+                    }
+                    blockStart = blockEnd;
+                  }
+                  if (currentBlockIndex === -1) return;
+
+                  // Search in the movement direction for a block with editable text
+                  const step = isDown ? 1 : -1;
+                  for (let idx = currentBlockIndex + step; idx >= 0 && idx < doc.childCount; idx += step) {
+                    let bPos = 0;
+                    for (let j = 0; j < idx; j++) {
+                      bPos += doc.child(j).nodeSize;
+                    }
+                    const block = doc.child(idx);
+
+                    if (isDown) {
+                      for (let p = bPos + 1; p < bPos + block.nodeSize; p++) {
+                        try {
+                          const $p = doc.resolve(p);
+                          if ($p.parent.isTextblock && $p.parent.type.spec.content?.includes('inline')) {
+                            view.dispatch(state.tr.setSelection(TextSelection.create(doc, p)));
+                            return;
+                          }
+                        } catch (e) { /* position not resolvable */ }
+                      }
+                    } else {
+                      for (let p = bPos + block.nodeSize - 1; p > bPos; p--) {
+                        try {
+                          const $p = doc.resolve(p);
+                          if ($p.parent.isTextblock && $p.parent.type.spec.content?.includes('inline')) {
+                            view.dispatch(state.tr.setSelection(TextSelection.create(doc, p)));
+                            return;
+                          }
+                        } catch (e) { /* position not resolvable */ }
+                      }
+                    }
+                  }
+                }, 10);
+              }
+
               return false;
             },
 

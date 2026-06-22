@@ -38,6 +38,8 @@ export const coreApi = {
     ipcRenderer.on("update:progress", handler);
     return () => ipcRenderer.removeListener("update:progress", handler);
   },
+  readUpdaterLog: (): Promise<string> => ipcRenderer.invoke("app:readUpdaterLog"),
+  getUpdaterLogPath: (): Promise<string> => ipcRenderer.invoke("app:getUpdaterLogPath"),
   // Menu actions - File
   menuNewFile: () => ipcRenderer.invoke("menu:newFile"),
   menuOpenFolder: () => ipcRenderer.invoke("menu:openFolder"),

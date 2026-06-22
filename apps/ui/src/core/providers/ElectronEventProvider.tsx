@@ -276,6 +276,18 @@ export const ElectronEventProvider: React.FC<{ children: React.ReactNode }> = ({
       "toast:info": (event: any, data: any) => {
         toast.info(data.title, { description: data.description || undefined,duration: data.duration || 4000 ,closeButton:true} );
       },
+      "toast:channelSwitch": (_event: any, data: { version: string; targetChannel: "stable" | "early-access" }) => {
+        const label = data.targetChannel === "early-access" ? "Early Access" : "Stable";
+        toast.info(`v${data.version} available on ${label}`, {
+          description: `A newer version is available on the ${label} channel.`,
+          duration: 12000,
+          closeButton: true,
+          action: {
+            label: `Switch to ${label}`,
+            onClick: () => window.electron?.userSettings.toggleEarlyAccess(data.targetChannel === "early-access"),
+          },
+        });
+      },
       "files:saveUnsavedForPaths": async (_event: any, requestId: string, paths: string[]) => {
         const panelTabs = queryClient.getQueryData<{ tabs: { id: string; source: string | null }[]; activeTabId: string }>(["panel:tabs", "main"]);
         const tabs = panelTabs?.tabs ?? [];
