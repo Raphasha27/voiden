@@ -254,8 +254,11 @@ jobs:
             echo "VOIDEN_GPG_PRIVATE_KEY not set — apt repo will publish unsigned."
           fi
 
+      # Not mandatory for a successful release — apt/snap failures are reported but don't fail the job.
       - name: Publish APT repo
+        id: publish-apt
         if: (inputs.channel == 'beta' || inputs.channel == 'stable') && matrix.artifact_name == 'linux-x64'
+        continue-on-error: true
         working-directory: apps/electron
         env:
           S3_ACCESS_KEY_ID_BETA: ${{ secrets.S3_ACCESS_KEY_ID_BETA }}
@@ -268,12 +271,22 @@ jobs:
           VOIDEN_GPG_PASSPHRASE: ${{ secrets.VOIDEN_GPG_PASSPHRASE }}
         run: node publish-apt.js ${{ inputs.channel }}
 
+      - name: Report APT publish failure
+        if: steps.publish-apt.outcome == 'failure'
+        run: echo "::warning::APT repo publish failed — continuing without it. Check the 'Publish APT repo' step logs." | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Publish Snap
+        id: publish-snap
         if: (inputs.channel == 'beta' || inputs.channel == 'stable') && matrix.artifact_name == 'linux-x64'
+        continue-on-error: true
         working-directory: apps/electron
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         run: node publish-snap.js ${{ inputs.channel }}
+
+      - name: Report Snap publish failure
+        if: steps.publish-snap.outcome == 'failure'
+        run: echo "::warning::Snap Store publish failed — continuing without it. Check the 'Publish Snap' step logs." | tee -a "$GITHUB_STEP_SUMMARY"
 
       # ── asset: yarn make only (no S3, no GitHub Release) ──────────────────────
       - name: Make (asset) — macOS Silicon
