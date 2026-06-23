@@ -17,6 +17,7 @@ import { requestOrchestrator } from "../requestOrchestrator";
 import { toast } from "@/core/components/ui/sonner";
 import { useVoidenEditorStore } from "@/core/editors/voiden/VoidenEditor";
 import { expandLinkedFilesInDoc } from "@/core/editors/voiden/utils/expandLinkedBlocks";
+import { UnresolvedVariablesError } from "../utils/collectUnresolvedVariables";
 
 export const useSendRestRequest = (_editor: Editor) => {
   // Always use the main VoidenEditor, not the passed editor.
@@ -29,6 +30,20 @@ export const useSendRestRequest = (_editor: Editor) => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const sectionIndexOverrideRef = useRef<number | undefined>(undefined);
   const queryClient = useQueryClient();
+
+  const handleSendError = (error: unknown) => {
+    if (error instanceof UnresolvedVariablesError) {
+      useResponseStore.getState().setError(activeDocument?.id || null, error.message);
+      return;
+    }
+
+    if (error instanceof Error && error.name === "AbortError") {
+      return;
+    }
+
+    const friendlyMessage = mapErrorToMessage(error);
+    useResponseStore.getState().setError(activeDocument?.id || null, friendlyMessage);
+  };
 
   /** Open the response panel and activate the response tab. */
   const showResponsePanel = async () => {
@@ -108,6 +123,7 @@ export const useSendRestRequest = (_editor: Editor) => {
         // Fallback to ProseMirror selection
         const cursorPos = sectionIndex !== undefined ? undefined : editor.state.selection.$from.pos;
         console.log('[useSendRequest] sectionIndex:', sectionIndex, 'cursorPos:', cursorPos);
+
         const response = await requestOrchestrator.executeRequest(
           editor,
           activeEnv,
@@ -125,8 +141,10 @@ export const useSendRestRequest = (_editor: Editor) => {
         queryClient.invalidateQueries({ queryKey: ["void-variable-data"] });
         return response;
       } catch (error) {
-        const friendlyMessage = mapErrorToMessage(error);
-        useResponseStore.getState().setError(activeDocument?.id || null, friendlyMessage);
+        if (error instanceof UnresolvedVariablesError) {
+          handleSendError(error);
+          return;
+        }
 
         const rawMessage = error instanceof Error ? error.message : String(error);
         const isScriptCancel = rawMessage.includes("Request cancelled by pre-request script");
@@ -148,6 +166,8 @@ export const useSendRestRequest = (_editor: Editor) => {
             closeButton: true,
           });
         }
+
+        handleSendError(error);
 
         if (error instanceof Error && error.name === "AbortError") {
           throw new Error("Request was cancelled");
@@ -209,8 +229,12 @@ export const useSendRestRequest = (_editor: Editor) => {
             { sectionIndex: sectionIdx }
           );
         } catch (err) {
-          // Continue to next section on individual failure (unless aborted)
           if (err instanceof Error && err.name === "AbortError") break;
+          if (err instanceof UnresolvedVariablesError) {
+            handleSendError(err);
+            break;
+          }
+          // Continue to next section on individual failure
           console.warn(`[runAll] Section ${sectionIdx} failed:`, err);
         }
       }
@@ -218,8 +242,7 @@ export const useSendRestRequest = (_editor: Editor) => {
       queryClient.invalidateQueries({ queryKey: ["void-variable-data"] });
     } catch (error) {
       if (!(error instanceof Error && error.name === "AbortError")) {
-        const friendlyMessage = mapErrorToMessage(error);
-        useResponseStore.getState().setError(activeDocument?.id || null, friendlyMessage);
+        handleSendError(error);
       }
     } finally {
       runAllRef.current = false;
@@ -255,8 +278,7 @@ export const useSendRestRequest = (_editor: Editor) => {
         queryClient.invalidateQueries({ queryKey: ["void-variable-data"] });
       } catch (error) {
         if (!(error instanceof Error && error.name === "AbortError")) {
-          const friendlyMessage = mapErrorToMessage(error);
-          useResponseStore.getState().setError(activeDocument?.id || null, friendlyMessage);
+          handleSendError(error);
         }
       }
     },

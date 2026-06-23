@@ -26,7 +26,8 @@ import { PasteHandler } from "./extensions/pasteHandler";
 import { SeamlessNavigation } from "./extensions/seamlessNavigation";
 import { cmdAll } from "./extensions/cmdAll";
 import { RequestSeparatorNode } from "./nodes/RequestSeparatorNode";
-import { TableCellAutocomplete } from "./extensions/TableCellAutocomplete";
+import { TableCellAutocomplete, isTableCellAutocompleteOpen } from "./extensions/TableCellAutocomplete";
+import { isSlashMenuOpen } from "./SlashCommand";
 
 // Extension to prevent markdown input rules in table cells and registered Voiden blocks.
 //
@@ -80,6 +81,8 @@ const DisableMarkdownInTables = Extension.create({
   },
 
   addProseMirrorPlugins() {
+    const editor = this.editor;
+
     return [
       new Plugin({
         key: new PluginKey('disableMarkdownInTables'),
@@ -102,6 +105,42 @@ const DisableMarkdownInTables = Extension.create({
             }
 
             return false;
+          },
+
+          // Tiptap's shared inputRulesPlugin also runs input rules on Enter
+          // (text '\n') so things like the code-block fence can trigger on
+          // Enter — and it runs via `handleKeyDown`, before any extension's
+          // own keymap. Our '\n' skip above (so table navigation owns Enter)
+          // therefore let later rules like Heading's `/^(#{1,6})\s$/` match
+          // the newline and convert "# " + Enter into a heading.
+          // handleDOMEvents fires before handleKeyDown, so intercepting here
+          // is the only way to stop that conversion before it happens.
+          handleDOMEvents: {
+            keydown: (view, event) => {
+              if (event.key !== 'Enter' || event.shiftKey || !editor) return false;
+
+              // A suggestion popup (slash command, table cell autocomplete) owns
+              // Enter while it's open — don't steal it for cell navigation.
+              if (isSlashMenuOpen() || isTableCellAutocompleteOpen()) return false;
+
+              const { $from } = view.state.selection;
+              const inTableCell = (() => {
+                for (let d = $from.depth; d > 0; d--) {
+                  const typeName = $from.node(d).type.name;
+                  if (typeName === 'tableCell' || typeName === 'tableHeader') return true;
+                }
+                return false;
+              })();
+
+              if (!inTableCell) return false;
+
+              event.preventDefault();
+              if (editor.commands.goToNextCell()) return true;
+              if (editor.can().addRowAfter()) {
+                editor.chain().addRowAfter().goToNextCell().run();
+              }
+              return true;
+            },
           },
         },
       }),

@@ -26,6 +26,10 @@ export const TableCellAutocompletePluginKey = new PluginKey(
   "tableCellAutocomplete",
 );
 
+let activePopup: Instance<Props>[] | undefined;
+
+export const isTableCellAutocompleteOpen = () => !!activePopup?.[0]?.state?.isShown;
+
 export const TableCellAutocomplete = Extension.create({
   name: "tableCellAutocomplete",
 
@@ -115,6 +119,7 @@ export const TableCellAutocomplete = Extension.create({
                 trigger: "manual",
                 placement: "bottom-start",
               });
+              activePopup = popup;
             },
 
             onUpdate(props: any) {
@@ -139,6 +144,9 @@ export const TableCellAutocomplete = Extension.create({
             onExit() {
               popup[0].destroy();
               component.destroy();
+              if (activePopup === popup) {
+                activePopup = undefined;
+              }
             },
           };
         },

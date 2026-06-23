@@ -12,6 +12,7 @@ import { RestApiRequestState, RestApiResponseState } from "./pipeline/types";
 import { hookRegistry, PipelineStage } from "./pipeline";
 import { Buffer } from "buffer";
 import { preSendProcessHook, replaceProcessVariablesInText, saveRuntimeVariables } from "./runtimeVariables";
+import { UnresolvedVariablesError } from "./utils/collectUnresolvedVariables";
 import { get } from "http";
 import { getRuntimeVariablesMap } from "./getRequestFromJson";
 import { expandLinkedBlocksInDoc } from "../editors/voiden/utils/expandLinkedBlocks";
@@ -395,6 +396,14 @@ export async function sendRequestHybrid(
       signal ? { aborted: signal.aborted } : undefined
     );
 
+    if (
+      electronResponse?.error &&
+      typeof electronResponse.error === "string" &&
+      electronResponse.error.startsWith("Cannot send request: unresolved")
+    ) {
+      throw new UnresolvedVariablesError(electronResponse.error, []);
+    }
+
     // Check if request failed
     if (!electronResponse.status && electronResponse.statusText) {
       const errorResponse: BaseResponse = {
@@ -548,6 +557,10 @@ export async function sendRequestHybrid(
     // Build final response
     return buildBaseResponseFromPipeline(responseState, request.preRequestResult);
   } catch (error) {
+    if (error instanceof UnresolvedVariablesError) {
+      throw error;
+    }
+
     const errorResponse: BaseResponse = {
       statusCode: 0,
       statusMessage: "",
