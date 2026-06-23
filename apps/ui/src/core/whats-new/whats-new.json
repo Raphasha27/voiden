@@ -1,6 +1,37 @@
 {
   "releases": [
     {
+      "version": "2.1.0",
+      "date": "June 2026",
+      "whatsnew": [
+        {
+          "icon": "🗺️",
+          "title": "Block Overview Panel",
+          "description": "See every block in a file at a glance from a new overview panel, making it easy to jump straight to any section without scrolling through the whole document. Great for long .void files with a lot of sections."
+        },
+        {
+          "icon": "🔀",
+          "title": "Drag-and-Drop Block Reordering",
+          "description": "Reorder blocks directly from the overview panel by dragging them into place — no more cutting and pasting content to move a section up or down in the file."
+        },
+        {
+          "icon": "🚫",
+          "title": "Unresolved Variable Guard",
+          "description": "Voiden now blocks a request from sending if it still contains an unresolved {{variable}} after environment and runtime substitution, instead of letting the literal placeholder go out over the wire."
+        },
+        {
+          "icon": "⌨️",
+          "title": "Editor Usability Pass",
+          "description": "Scrollbar behavior, cursor placement, window memory, and select-all all got attention this release, along with smoother keyboard navigation and nesting when moving between blocks."
+        },
+        {
+          "icon": "🐛",
+          "title": "Cookie, Markdown & Tooltip Fixes",
+          "description": "Fixed set-cookie capture lagging one request behind in runtime variables, markdown formatting leaking inside blocks where it shouldn't render, and the \"What's New\" tooltip popping up after the mouse had already left the button."
+        }
+      ]
+    },
+    {
       "version": "2.0.1",
       "date": "June 2026",
       "whatsnew": [
