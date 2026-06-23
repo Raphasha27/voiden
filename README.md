@@ -76,16 +76,16 @@
 
 ## Why Voiden
 
-Voiden is an offline API client that helps developers build, test, collaborate and document APIs in one place. With a programmable interface (/slash commands) and an agent-friendly CLI, Voiden adapts to how engineers already work. Voiden is built with [Electron](https://www.electronjs.org/), Typescript and Javascript, and it doesnt require an account to use it. 
+Voiden is an offline API client that helps developers, QA and technical writers build, test, collaborate and document APIs in one place. With a programmable interface (/slash commands) and an agent-friendly CLI, Voiden adapts to how engineers already work. Voiden is built with [Electron](https://www.electronjs.org/), Typescript and Javascript, and it doesnt require an account to use it. 
 
 No telemetry, no VC funding, and no cloud lock-in.
 
 ✨ Features:
 
-All Major API Protocols:
+Voiden supports all major API protocols:
 
 - Supports REST, GraphQL, Grpc, Web-Sockets. All these are plugins that you can install or uninstall according to your needs. Community plugins available: https://voiden.md/plugins
-- Import collections from Postman and OpenAPI.
+- Import collections from Postman, Insomnia and Swagger/ OpenAPI.
 
 Single Source of truth for all API work in the same file:
 
@@ -107,8 +107,15 @@ Collaboration:
 AI Friendly:
 
 - No proprietary workspace. No binary exports. Pure text all the way down, diffable like code, greppable, AI-editable, and merge-friendly.
-- Supports Voiden skills for Claude and Codex agents. 
+- Supports Voiden skills for Claude and Codex agents.
 
+[Voiden Runner](https://github.com/VoidenHQ/voiden/tree/beta/packages/voiden-runner): A headless CLI for running those .void files outside the desktop app, directly in the terminal.
+
+- runs on Node.js 18+
+- works in terminal, CI/CD, Docker, and cron jobs
+- supports REST, WebSocket, gRPC, and GraphQL
+- supports request chaining through runtime variables
+- works with core Voiden plugins like scripting, assertions, faker, advanced auth, + more.
 
 ## Install
 
@@ -174,7 +181,7 @@ Looking for newer builds? Check the early access section on [voiden.md/download]
 
 For a guided first run, see the [Voiden quick start](https://docs.voiden.md/docs/getting-started-section/getting-started/quick-start).
 
-### Coming from Postman
+### Coming from Postman and other tools?
 
 If you already use Postman, you can bring your existing collections with you:
 
@@ -182,7 +189,11 @@ If you already use Postman, you can bring your existing collections with you:
 2. Drag the exported JSON file into the Voiden file list on the left panel.
 3. Open the imported file and click **Generate Voiden Files** to create a folder of native `.void` files — one per request, with headers, auth, query params, path variables, bodies, and response examples preserved.
 
-Full walkthrough: [Postman Imports](https://docs.voiden.md/docs/getting-started-section/getting-started/postman-import). OpenAPI specs work the same way via [OpenAPI Imports](https://docs.voiden.md/docs/getting-started-section/getting-started/openapi-imports).
+Full walkthrough: [Postman Imports](https://docs.voiden.md/docs/getting-started-section/getting-started/postman-import). 
+
+Using Swagger or Insomnia? 
+
+[OpenAPI Imports](https://docs.voiden.md/docs/getting-started-section/getting-started/openapi-imports). [Insomnia Imports](https://docs.voiden.md/docs/getting-started-section/getting-started/insomnia-imports)
 
 ## What you can do
 

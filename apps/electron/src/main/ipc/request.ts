@@ -2107,7 +2107,32 @@ async function handleGrpcRequest(
       try {
         await fs.access(protoFilePath);
       } catch {
-        resolvedProtoPath = path.join(activeProject, protoFilePath);
+        // Legacy .void files may store a project-relative path with a stray
+        // leading slash (e.g. "/hello.proto"). Only use the project-joined
+        // candidate if it actually exists — otherwise keep the original path
+        // so a genuinely missing/external file reports its real path instead
+        // of a nonsensical path doubled under the project root.
+        const candidate = path.join(activeProject, protoFilePath);
+        try {
+          await fs.access(candidate);
+          resolvedProtoPath = candidate;
+        } catch {
+          // The stored path is an absolute reference to a file outside the
+          // project (e.g. picked via "Import proto file" from elsewhere on
+          // disk). Absolute paths aren't portable — if this .void file was
+          // shared from or synced from a different machine, the path simply
+          // won't exist here. Surface that clearly instead of letting it
+          // fall through to a generic ENOENT later.
+          return {
+            status: 0,
+            statusText: "grpc-proto-not-found",
+            error:
+              `Proto file not found: "${protoFilePath}". ` +
+              `This is an absolute path to a file outside the project, so it only works on the system it was selected on. ` +
+              `If you're opening this project on a different machine, re-select the proto file ("Remove" then "Import proto file") on this system.`,
+            protocol: 'grpc',
+          };
+        }
       }
     }
 
