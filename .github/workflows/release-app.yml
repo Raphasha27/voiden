@@ -32,6 +32,17 @@
 #   S3_ACCESS_KEY_ID_DEV        — AWS access key for development channel
 #   S3_SECRET_ACCESS_KEY_DEV    — AWS secret key for development channel
 #   S3_BUCKET_NAME_DEV          — S3 bucket for development channel (default: voiden-dev-releases)
+#
+#   APT repo + Snap Store publishing (beta + stable only):
+#   VOIDEN_GPG_PRIVATE_KEY      — base64-encoded `gpg --export-secret-keys --armor <key-id>`.
+#                                 Imported into the runner's keyring before signing.
+#                                 Omit to publish an unsigned apt repo (trusted=yes).
+#   VOIDEN_GPG_KEY_ID           — the GPG key ID to sign with
+#   VOIDEN_GPG_PASSPHRASE       — passphrase for that key, used non-interactively via
+#                                 --pinentry-mode loopback (no pinentry prompt in CI)
+#   SNAPCRAFT_STORE_CREDENTIALS — output of `snapcraft export-login -`, run once locally
+#                                 after `snapcraft login`. Lets snapcraft authenticate to
+#                                 the Snap Store without an interactive login/password.
 
 name: Release Voiden App
 
@@ -105,6 +116,11 @@ jobs:
       - name: Run cleanup (macOS / Linux)
         if: runner.os != 'Windows'
         run: chmod +x cleanup.sh && ./cleanup.sh
+
+      # Needed by publish-snap.js (apt/snap publish only runs for beta + stable, see below).
+      - name: Install snapcraft
+        if: matrix.artifact_name == 'linux-x64' && (inputs.channel == 'beta' || inputs.channel == 'stable')
+        run: sudo snap install snapcraft --classic
 
       # Windows is disabled until Azure Trusted Signing is set up — see matrix above.
       # - name: Run cleanup (Windows)
@@ -228,6 +244,39 @@ jobs:
           S3_BUCKET_NAME_STABLE: ${{ secrets.S3_BUCKET_NAME_STABLE }}
           S3_BUCKET_NAME_DEV: ${{ secrets.S3_BUCKET_NAME_DEV }}
         run: node republish.js ${{ inputs.channel }}
+
+      # ── beta / stable only: apt + snap publishing ─────────────────────────────
+      - name: Import GPG signing key
+        if: (inputs.channel == 'beta' || inputs.channel == 'stable') && matrix.artifact_name == 'linux-x64'
+        env:
+          VOIDEN_GPG_PRIVATE_KEY: ${{ secrets.VOIDEN_GPG_PRIVATE_KEY }}
+        run: |
+          if [ -n "$VOIDEN_GPG_PRIVATE_KEY" ]; then
+            echo "$VOIDEN_GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
+          else
+            echo "VOIDEN_GPG_PRIVATE_KEY not set — apt repo will publish unsigned."
+          fi
+
+      - name: Publish APT repo
+        if: (inputs.channel == 'beta' || inputs.channel == 'stable') && matrix.artifact_name == 'linux-x64'
+        working-directory: apps/electron
+        env:
+          S3_ACCESS_KEY_ID_BETA: ${{ secrets.S3_ACCESS_KEY_ID_BETA }}
+          S3_SECRET_ACCESS_KEY_BETA: ${{ secrets.S3_SECRET_ACCESS_KEY_BETA }}
+          S3_ACCESS_KEY_ID_STABLE: ${{ secrets.S3_ACCESS_KEY_ID_STABLE }}
+          S3_SECRET_ACCESS_KEY_STABLE: ${{ secrets.S3_SECRET_ACCESS_KEY_STABLE }}
+          S3_BUCKET_NAME_BETA: ${{ secrets.S3_BUCKET_NAME_BETA }}
+          S3_BUCKET_NAME_STABLE: ${{ secrets.S3_BUCKET_NAME_STABLE }}
+          VOIDEN_GPG_KEY_ID: ${{ secrets.VOIDEN_GPG_KEY_ID }}
+          VOIDEN_GPG_PASSPHRASE: ${{ secrets.VOIDEN_GPG_PASSPHRASE }}
+        run: node publish-apt.js ${{ inputs.channel }}
+
+      - name: Publish Snap
+        if: (inputs.channel == 'beta' || inputs.channel == 'stable') && matrix.artifact_name == 'linux-x64'
+        working-directory: apps/electron
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: node publish-snap.js ${{ inputs.channel }}
 
       # ── asset: yarn make only (no S3, no GitHub Release) ──────────────────────
       - name: Make (asset) — macOS Silicon
