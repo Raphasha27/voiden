@@ -26,7 +26,8 @@ import { PasteHandler } from "./extensions/pasteHandler";
 import { SeamlessNavigation } from "./extensions/seamlessNavigation";
 import { cmdAll } from "./extensions/cmdAll";
 import { RequestSeparatorNode } from "./nodes/RequestSeparatorNode";
-import { TableCellAutocomplete } from "./extensions/TableCellAutocomplete";
+import { TableCellAutocomplete, isTableCellAutocompleteOpen } from "./extensions/TableCellAutocomplete";
+import { isSlashMenuOpen } from "./SlashCommand";
 
 // Extension to prevent markdown input rules in table cells and registered Voiden blocks.
 //
@@ -117,6 +118,10 @@ const DisableMarkdownInTables = Extension.create({
           handleDOMEvents: {
             keydown: (view, event) => {
               if (event.key !== 'Enter' || event.shiftKey || !editor) return false;
+
+              // A suggestion popup (slash command, table cell autocomplete) owns
+              // Enter while it's open — don't steal it for cell navigation.
+              if (isSlashMenuOpen() || isTableCellAutocompleteOpen()) return false;
 
               const { $from } = view.state.selection;
               const inTableCell = (() => {
