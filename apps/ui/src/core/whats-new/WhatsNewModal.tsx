@@ -528,12 +528,18 @@ const UpdateChangelog = ({ releases }: { releases: Release[] }) => {
   // Only one card stays open at a time — tracked by a "version:index" key so
   // it works across every release shown in the dialog, not just within one.
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  // The current release always gets priority — older ones stay collapsed
+  // behind a "Show older releases" toggle so they don't bury what's new now.
+  const [showOlder, setShowOlder] = useState(false);
+
+  const visibleReleases = showOlder ? releases : releases.slice(0, 1);
+  const olderCount = releases.length - 1;
 
   return (
     <div className="space-y-5">
-      {releases.map((release, ri) => (
+      {visibleReleases.map((release, ri) => (
         <div key={release.version} className="space-y-1">
-          {releases.length > 1 && ri > 0 && (
+          {visibleReleases.length > 1 && ri > 0 && (
             <div className="flex items-center gap-3 pt-1 pb-2">
               <span
                 className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded"
@@ -560,11 +566,20 @@ const UpdateChangelog = ({ releases }: { releases: Release[] }) => {
               />
             );
           })}
-          {ri < releases.length - 1 && (
+          {ri < visibleReleases.length - 1 && (
             <div className="h-px mt-4" style={{ background: 'var(--border)' }} />
           )}
         </div>
       ))}
+      {!showOlder && olderCount > 0 && (
+        <button
+          onClick={() => setShowOlder(true)}
+          className="text-[11px] font-semibold mt-1 hover:opacity-80 transition-opacity"
+          style={{ color: 'rgb(var(--common-accent))' }}
+        >
+          Show older releases ({olderCount})
+        </button>
+      )}
     </div>
   );
 };
