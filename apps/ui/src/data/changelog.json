@@ -1,5 +1,34 @@
 [
   {
+    "version": "v2.1.0",
+    "date": "23/06/2026",
+    "title": "Block Overview Panel, Unresolved Variable Guard & Editor Usability",
+    "description": "Release adding a block overview panel with drag-and-drop reordering, a guard that blocks sending requests with unresolved variables, and a batch of editor usability and keyboard navigation improvements.",
+    "icon": "Wrench",
+    "iconColor": "text-blue-400",
+    "bgColor": "bg-gradient-to-br from-blue-900 to-slate-900",
+    "changes": {
+      "Added": [
+        "What's New panel — a button in the top bar surfaces the latest release notes without leaving the app",
+        "Block overview panel — see all blocks in a file at a glance and jump straight to any section",
+        "Drag-and-drop block reordering from the overview panel — move sections up or down without cutting and pasting content",
+        "Environment variable bracket autocomplete — typing {{ now suggests closing brackets and available variables"
+      ],
+      "Improved": [
+        "Editor usability pass — scrollbar behavior, cursor placement, window memory, and select-all options",
+        "Keyboard navigation and nesting experience for blocks",
+        "Navigation and markdown rendering inside table cells now feels seamless",
+        "Custom variable highlighter and response panel container registration"
+      ],
+      "Fixed": [
+        "Requests are now blocked from sending when unresolved environment or runtime variables remain after substitution, instead of going out with literal {{variable}} text",
+        "set-cookie capture in runtime variables no longer lags one request behind",
+        "Markdown formatting no longer leaks inside blocks where it shouldn't render",
+        "Tippy/popup navigation fix"
+      ]
+    }
+  },
+  {
     "version": "v2.0.1",
     "date": "10/06/2026",
     "title": "Stable: Plugin Architecture Overhaul",
