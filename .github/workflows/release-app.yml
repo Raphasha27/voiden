@@ -6,8 +6,9 @@
 #   beta        — publishes to S3 (beta bucket) + creates a pre-release GitHub Release
 #   stable      — publishes to S3 (stable bucket) + creates a GitHub Release
 #   development — publishes to S3 (dev bucket) only; no GitHub Release is created
-#   asset       — builds only; no S3, no GitHub Release. Artifacts are attached to
-#                 this workflow run and downloadable via a temporary Actions URL.
+#   asset       — builds only; no S3. Installer binaries (.dmg/.deb/.rpm/.AppImage/.exe)
+#                 are attached to a draft GitHub Release for direct download links
+#                 (draft releases are only visible to repo collaborators).
 #
 # Required repository secrets:
 #   APPLE_CERTIFICATE           — base64-encoded .p12 developer certificate
@@ -270,12 +271,12 @@ jobs:
         run: |
           security delete-keychain build.keychain 2>/dev/null || true
 
-  # ── GitHub Release (stable + beta only) ──────────────────────────────────────
+  # ── GitHub Release (stable + beta + asset) ────────────────────────────────────
   release:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    if: inputs.channel != 'development' && inputs.channel != 'asset'
+    if: inputs.channel != 'development'
 
     steps:
       - name: Checkout
@@ -296,7 +297,27 @@ jobs:
       - name: List artifacts
         run: find release-artifacts -type f | sort
 
+      # asset builds: installer binaries only (skip .zip — it's the raw app bundle,
+      # not a user-facing distributable), tagged per run so repeat asset builds
+      # don't collide with each other or with real version tags.
+      - name: Create GitHub Release (asset)
+        if: inputs.channel == 'asset'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: asset-${{ steps.version.outputs.version }}-${{ github.run_id }}
+          name: Voiden v${{ steps.version.outputs.version }} (asset build #${{ github.run_number }})
+          draft: true
+          generate_release_notes: false
+          fail_on_unmatched_files: false
+          files: |
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.deb
+            release-artifacts/**/*.rpm
+            release-artifacts/**/*.AppImage
+
       - name: Create GitHub Release
+        if: inputs.channel != 'asset'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
