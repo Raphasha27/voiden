@@ -231,18 +231,15 @@ jobs:
 
       # Republish Linux artifacts: generates latest.json and uploads .deb/.rpm/.AppImage URLs to S3
       - name: Republish Linux artifacts
-        if: inputs.channel != 'asset' && matrix.artifact_name == 'linux-x64'
+        if: (inputs.channel == 'beta' || inputs.channel == 'stable') && matrix.artifact_name == 'linux-x64'
         working-directory: apps/electron
         env:
           S3_ACCESS_KEY_ID_BETA: ${{ secrets.S3_ACCESS_KEY_ID_BETA }}
           S3_SECRET_ACCESS_KEY_BETA: ${{ secrets.S3_SECRET_ACCESS_KEY_BETA }}
           S3_ACCESS_KEY_ID_STABLE: ${{ secrets.S3_ACCESS_KEY_ID_STABLE }}
           S3_SECRET_ACCESS_KEY_STABLE: ${{ secrets.S3_SECRET_ACCESS_KEY_STABLE }}
-          S3_ACCESS_KEY_ID_DEV: ${{ secrets.S3_ACCESS_KEY_ID_DEV }}
-          S3_SECRET_ACCESS_KEY_DEV: ${{ secrets.S3_SECRET_ACCESS_KEY_DEV }}
           S3_BUCKET_NAME_BETA: ${{ secrets.S3_BUCKET_NAME_BETA }}
           S3_BUCKET_NAME_STABLE: ${{ secrets.S3_BUCKET_NAME_STABLE }}
-          S3_BUCKET_NAME_DEV: ${{ secrets.S3_BUCKET_NAME_DEV }}
         run: node republish.js ${{ inputs.channel }}
 
       # ── beta / stable only: apt + snap publishing ─────────────────────────────
