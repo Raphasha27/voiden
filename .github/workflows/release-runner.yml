@@ -30,10 +30,6 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=runner-v$VERSION" >> "$GITHUB_OUTPUT"
 
-      # core-extensions is gitignored — fetch it from its own repo
-      - name: Clone core-extensions
-        run: git clone https://github.com/VoidenHQ/core-extensions.git core-extensions
-
       - name: Setup Node (with npm registry auth)
         uses: actions/setup-node@v4
         with:
@@ -43,12 +39,17 @@ jobs:
       - name: Enable Corepack (Yarn)
         run: corepack enable
 
-      - name: Install workspace dependencies
-        run: yarn install --immutable
+      # Same prep the app release uses — clones plugin-registry + core plugins
+      # into plugins/, then yarn installs workspace deps. The postbuild step
+      # below (build-runners.mjs) needs those cloned repos + their own
+      # node_modules (esbuild) to build {pluginId}-runner.js bundles.
+      - name: Run cleanup (clone plugins + install deps)
+        run: chmod +x cleanup.sh && ./cleanup.sh
 
       # npm run build handles the full chain:
-      #   prebuild → tsc in core-extensions → tsc in executors
-      #   build    → tsc in voiden-runner
+      #   prebuild  → tsc in executors
+      #   build     → tsc in voiden-runner
+      #   postbuild → build-runners.mjs (bundles each cloned plugin's runner.ts)
       - name: Build @voiden/runner
         working-directory: packages/voiden-runner
         run: npm run build
