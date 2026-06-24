@@ -436,16 +436,25 @@ const VariableTableRow = ({
 
 // ─── Add variable row ─────────────────────────────────────────────────────────
 
-const AddVariableRow = ({ onAdd }: { onAdd: (key: string, value: string, isPrivate: boolean) => void }) => {
-  const [key, setKey] = useState("");
-  const [value, setValue] = useState("");
-  const [isPrivate, setIsPrivate] = useState(false);
+const AddVariableRow = ({
+  onAdd,
+  draft,
+  onDraftChange,
+}: {
+  onAdd: (key: string, value: string, isPrivate: boolean) => void;
+  draft: { key: string; value: string; isPrivate: boolean };
+  onDraftChange: (draft: { key: string; value: string; isPrivate: boolean }) => void;
+}) => {
+  const { key, value, isPrivate } = draft;
+  const setKey = (k: string) => onDraftChange({ key: k, value, isPrivate });
+  const setValue = (v: string) => onDraftChange({ key, value: v, isPrivate });
+  const setIsPrivate = (p: boolean) => onDraftChange({ key, value, isPrivate: p });
   const keyRef = useRef<HTMLInputElement>(null);
 
   const handleAdd = () => {
     if (!key.trim()) { keyRef.current?.focus(); return; }
     onAdd(key.trim(), value, isPrivate);
-    setKey(""); setValue(""); setIsPrivate(false);
+    onDraftChange({ key: "", value: "", isPrivate: false });
     keyRef.current?.focus();
   };
 
@@ -498,6 +507,8 @@ const VariablesPanel = ({
   onUpdateNode,
   selectedIds,
   onSelectionChange,
+  addDraft,
+  onAddDraftChange,
 }: {
   node: EditableEnvNode;
   envPath: string;
@@ -506,6 +517,8 @@ const VariablesPanel = ({
   onUpdateNode: (updated: EditableEnvNode) => void;
   selectedIds: Set<string>;
   onSelectionChange: (ids: Set<string>) => void;
+  addDraft: { key: string; value: string; isPrivate: boolean };
+  onAddDraftChange: (draft: { key: string; value: string; isPrivate: boolean }) => void;
 }) => {
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -621,7 +634,7 @@ const VariablesPanel = ({
       </div>
 
       {/* Add row */}
-      <AddVariableRow onAdd={handleAddVariable} />
+      <AddVariableRow onAdd={handleAddVariable} draft={addDraft} onDraftChange={onAddDraftChange} />
 
       {/* Bulk action bar */}
       {someSelected && (
@@ -1059,11 +1072,32 @@ export const EnvironmentEditor = ({ tabId }: { tabId: string }) => {
     });
   };
 
-  const [tree, setTree] = useState<EditableEnvTree>({});
+  const [tree, setTree] = useState<EditableEnvTree>(() => {
+    const draft = useEditorStore.getState().unsaved[tabId];
+    return draft ? JSON.parse(draft) : {};
+  });
   const [selectedEnvPath, setSelectedEnvPath] = useState<string | null>(null);
   const [selectedVarIds, setSelectedVarIds] = useState<Set<string>>(new Set());
   const [selectedRuntimeKeys, setSelectedRuntimeKeys] = useState<Set<string>>(new Set());
   const [pendingNav, setPendingNav] = useState<{ path: string | null } | null>(null);
+
+  // Unconfirmed "add variable" row text — persisted so it survives a tab switch
+  // even though it hasn't been committed to the tree yet (no Enter/Add click).
+  const setUnsavedDraft = useEditorStore((s) => s.setUnsaved);
+  const clearUnsavedDraft = useEditorStore((s) => s.clearUnsaved);
+  const addDraftKey = `${tabId}:addrow`;
+  const [addDraft, setAddDraftState] = useState<{ key: string; value: string; isPrivate: boolean }>(() => {
+    const raw = useEditorStore.getState().unsaved[addDraftKey];
+    return raw ? JSON.parse(raw) : { key: "", value: "", isPrivate: false };
+  });
+  const setAddDraft = useCallback((draft: { key: string; value: string; isPrivate: boolean }) => {
+    setAddDraftState(draft);
+    if (!draft.key && !draft.value && !draft.isPrivate) {
+      clearUnsavedDraft(addDraftKey);
+    } else {
+      setUnsavedDraft(addDraftKey, JSON.stringify(draft));
+    }
+  }, [addDraftKey, clearUnsavedDraft, setUnsavedDraft]);
 
   // Clear variable selections whenever the active env changes
   useEffect(() => {
@@ -1115,9 +1149,9 @@ export const EnvironmentEditor = ({ tabId }: { tabId: string }) => {
 
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedProfileRef = useRef(selectedProfile);
-  const dirtyRef = useRef(false);
+  const dirtyRef = useRef(!!useEditorStore.getState().unsaved[tabId]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const treeDataRef = useRef<EditableEnvTree>({});
+  const treeDataRef = useRef<EditableEnvTree>(tree);
   const treeProjectRef = useRef<string | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1171,8 +1205,15 @@ export const EnvironmentEditor = ({ tabId }: { tabId: string }) => {
   useEffect(() => { rememberedProfile = selectedProfile; selectedProfileRef.current = selectedProfile; }, [selectedProfile]);
   // Invalidate on mount
   useEffect(() => { queryClient.invalidateQueries({ queryKey: ["yaml-environments"] }); }, [queryClient]);
-  // Reset dirty on profile switch
-  useEffect(() => { dirtyRef.current = false; }, [selectedProfile]);
+  // Reset dirty on profile switch (skip the initial mount — only an actual switch should discard a restored draft)
+  const prevProfileRef = useRef(selectedProfile);
+  useEffect(() => {
+    if (prevProfileRef.current !== selectedProfile) {
+      prevProfileRef.current = selectedProfile;
+      dirtyRef.current = false;
+      clearUnsavedDraft(tabId);
+    }
+  }, [selectedProfile, tabId, clearUnsavedDraft]);
   // Reset on project switch
   useEffect(() => {
     if (treeProjectRef.current !== null && treeProjectRef.current !== activeProject) {
@@ -1185,16 +1226,20 @@ export const EnvironmentEditor = ({ tabId }: { tabId: string }) => {
       treeDataRef.current = {};
       treeProjectRef.current = null;
       setSelectedEnvPath(null);
+      clearUnsavedDraft(tabId);
     }
-  }, [activeProject]);
+  }, [activeProject, tabId, clearUnsavedDraft]);
 
-  // Initialize tree from fetched data
+  // Initialize tree from fetched data. treeProjectRef must be set even when a
+  // dirty/restored draft blocks the merge, so pending saves know the project path.
   useEffect(() => {
-    if (data && !dirtyRef.current) {
-      const merged = mergeToEditable(data.public, data.private);
-      setTree(merged);
-      treeDataRef.current = merged;
+    if (data) {
       treeProjectRef.current = activeProject;
+      if (!dirtyRef.current) {
+        const merged = mergeToEditable(data.public, data.private);
+        setTree(merged);
+        treeDataRef.current = merged;
+      }
     }
   }, [data, activeProject]);
 
@@ -1235,10 +1280,12 @@ export const EnvironmentEditor = ({ tabId }: { tabId: string }) => {
         const projectAtFlush = treeProjectRef.current;
         if (!projectAtFlush) return;
         const { publicTree, privateTree } = splitFromEditable(treeDataRef.current);
-        saveRef.current({ publicTree, privateTree, projectPath: projectAtFlush });
+        saveRef.current({ publicTree, privateTree, projectPath: projectAtFlush }, {
+          onSuccess: () => clearUnsavedDraft(tabId),
+        });
       }
     };
-  }, []);
+  }, [tabId, clearUnsavedDraft]);
 
   const scheduleSave = useCallback((newTree: EditableEnvTree) => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -1247,16 +1294,19 @@ export const EnvironmentEditor = ({ tabId }: { tabId: string }) => {
       timerRef.current = null;
       if (!projectAtSchedule) return;
       const { publicTree, privateTree } = splitFromEditable(newTree);
-      save({ publicTree, privateTree, projectPath: projectAtSchedule });
+      save({ publicTree, privateTree, projectPath: projectAtSchedule }, {
+        onSuccess: () => clearUnsavedDraft(tabId),
+      });
     }, DEBOUNCE_MS);
-  }, [save]);
+  }, [save, clearUnsavedDraft, tabId]);
 
   const handleUpdateTree = useCallback((newTree: EditableEnvTree) => {
     dirtyRef.current = true;
     setTree(newTree);
     treeDataRef.current = newTree;
+    setUnsavedDraft(tabId, JSON.stringify(newTree));
     scheduleSave(newTree);
-  }, [scheduleSave]);
+  }, [scheduleSave, setUnsavedDraft, tabId]);
 
   // Jump target handling
   const consumeJumpTarget = useCallback((currentTree: EditableEnvTree) => {
@@ -1812,6 +1862,8 @@ export const EnvironmentEditor = ({ tabId }: { tabId: string }) => {
                   onUpdateNode={handleUpdateSelectedNode}
                   selectedIds={selectedVarIds}
                   onSelectionChange={setSelectedVarIds}
+                  addDraft={addDraft}
+                  onAddDraftChange={setAddDraft}
                 />
               ) : (
                 <RuntimePanel
