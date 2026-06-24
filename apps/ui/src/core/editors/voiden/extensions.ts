@@ -13,7 +13,7 @@ import { VariableCapture } from "./nodes/VariableCapture";
 import { CustomPlaceholder } from "./extensions/CustomPlaceholder";
 import { AnyExtension, Extension, InputRule, PasteRule } from "@tiptap/core";
 import Dropcursor from "@tiptap/extension-dropcursor";
-import { FileLink } from "./extensions/ExternalFile";
+import { FileLink, isFileLinkSuggestionOpen } from "./extensions/ExternalFile";
 import { LinkedBlock } from "./extensions/BlockLink";
 import { LinkedFile } from "./extensions/LinkedFile";
 import { SourceSyncIndicator } from "./extensions/SourceSyncIndicator";
@@ -119,9 +119,13 @@ const DisableMarkdownInTables = Extension.create({
             keydown: (view, event) => {
               if (event.key !== 'Enter' || event.shiftKey || !editor) return false;
 
-              // A suggestion popup (slash command, table cell autocomplete) owns
-              // Enter while it's open — don't steal it for cell navigation.
-              if (isSlashMenuOpen() || isTableCellAutocompleteOpen()) return false;
+              // A suggestion popup (slash command, table cell autocomplete, file
+              // link picker) owns Enter while it's open — don't steal it for
+              // cell navigation. Checked independently of TableCellAutocomplete
+              // because FileLink's "@" trigger requires startOfLine, which is
+              // false once earlier content (e.g. a prior file attachment)
+              // already occupies the cell.
+              if (isSlashMenuOpen() || isTableCellAutocompleteOpen() || isFileLinkSuggestionOpen()) return false;
 
               const { $from } = view.state.selection;
               const inTableCell = (() => {
