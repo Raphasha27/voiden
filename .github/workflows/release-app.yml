@@ -33,16 +33,9 @@
 #   S3_SECRET_ACCESS_KEY_DEV    — AWS secret key for development channel
 #   S3_BUCKET_NAME_DEV          — S3 bucket for development channel (default: voiden-dev-releases)
 #
-#   APT repo + Snap Store publishing (beta + stable only):
-#   VOIDEN_GPG_PRIVATE_KEY      — base64-encoded `gpg --export-secret-keys --armor <key-id>`.
-#                                 Imported into the runner's keyring before signing.
-#                                 Omit to publish an unsigned apt repo (trusted=yes).
-#   VOIDEN_GPG_KEY_ID           — the GPG key ID to sign with
-#   VOIDEN_GPG_PASSPHRASE       — passphrase for that key, used non-interactively via
-#                                 --pinentry-mode loopback (no pinentry prompt in CI)
-#   SNAPCRAFT_STORE_CREDENTIALS — output of `snapcraft export-login -`, run once locally
-#                                 after `snapcraft login`. Lets snapcraft authenticate to
-#                                 the Snap Store without an interactive login/password.
+#   APT repo + Snap Store publishing (beta + stable only) is handled by the
+#   "Release Package Managers" workflow (release-package-managers.yml), called
+#   below after the Linux build. See that file for its required secrets.
 
 name: Release Voiden App
 
@@ -116,11 +109,6 @@ jobs:
       - name: Run cleanup (macOS / Linux)
         if: runner.os != 'Windows'
         run: chmod +x cleanup.sh && ./cleanup.sh
-
-      # Needed by publish-snap.js (apt/snap publish only runs for beta + stable, see below).
-      - name: Install snapcraft
-        if: matrix.artifact_name == 'linux-x64' && (inputs.channel == 'beta' || inputs.channel == 'stable')
-        run: sudo snap install snapcraft --classic
 
       # Windows is disabled until Azure Trusted Signing is set up — see matrix above.
       # - name: Run cleanup (Windows)
@@ -242,52 +230,6 @@ jobs:
           S3_BUCKET_NAME_STABLE: ${{ secrets.S3_BUCKET_NAME_STABLE }}
         run: node republish.js ${{ inputs.channel }}
 
-      # ── beta / stable only: apt + snap publishing ─────────────────────────────
-      - name: Import GPG signing key
-        if: (inputs.channel == 'beta' || inputs.channel == 'stable') && matrix.artifact_name == 'linux-x64'
-        env:
-          VOIDEN_GPG_PRIVATE_KEY: ${{ secrets.VOIDEN_GPG_PRIVATE_KEY }}
-        run: |
-          if [ -n "$VOIDEN_GPG_PRIVATE_KEY" ]; then
-            echo "$VOIDEN_GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
-          else
-            echo "VOIDEN_GPG_PRIVATE_KEY not set — apt repo will publish unsigned."
-          fi
-
-      # Not mandatory for a successful release — apt/snap failures are reported but don't fail the job.
-      - name: Publish APT repo
-        id: publish-apt
-        if: (inputs.channel == 'beta' || inputs.channel == 'stable') && matrix.artifact_name == 'linux-x64'
-        continue-on-error: true
-        working-directory: apps/electron
-        env:
-          S3_ACCESS_KEY_ID_BETA: ${{ secrets.S3_ACCESS_KEY_ID_BETA }}
-          S3_SECRET_ACCESS_KEY_BETA: ${{ secrets.S3_SECRET_ACCESS_KEY_BETA }}
-          S3_ACCESS_KEY_ID_STABLE: ${{ secrets.S3_ACCESS_KEY_ID_STABLE }}
-          S3_SECRET_ACCESS_KEY_STABLE: ${{ secrets.S3_SECRET_ACCESS_KEY_STABLE }}
-          S3_BUCKET_NAME_BETA: ${{ secrets.S3_BUCKET_NAME_BETA }}
-          S3_BUCKET_NAME_STABLE: ${{ secrets.S3_BUCKET_NAME_STABLE }}
-          VOIDEN_GPG_KEY_ID: ${{ secrets.VOIDEN_GPG_KEY_ID }}
-          VOIDEN_GPG_PASSPHRASE: ${{ secrets.VOIDEN_GPG_PASSPHRASE }}
-        run: node publish-apt.js ${{ inputs.channel }}
-
-      - name: Report APT publish failure
-        if: steps.publish-apt.outcome == 'failure'
-        run: echo "::warning::APT repo publish failed — continuing without it. Check the 'Publish APT repo' step logs." | tee -a "$GITHUB_STEP_SUMMARY"
-
-      - name: Publish Snap
-        id: publish-snap
-        if: (inputs.channel == 'beta' || inputs.channel == 'stable') && matrix.artifact_name == 'linux-x64'
-        continue-on-error: true
-        working-directory: apps/electron
-        env:
-          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        run: node publish-snap.js ${{ inputs.channel }}
-
-      - name: Report Snap publish failure
-        if: steps.publish-snap.outcome == 'failure'
-        run: echo "::warning::Snap Store publish failed — continuing without it. Check the 'Publish Snap' step logs." | tee -a "$GITHUB_STEP_SUMMARY"
-
       # ── asset: yarn make only (no S3, no GitHub Release) ──────────────────────
       - name: Make (asset) — macOS Silicon
         if: inputs.channel == 'asset' && matrix.artifact_name == 'darwin-arm64'
@@ -330,6 +272,16 @@ jobs:
         run: |
           security delete-keychain build.keychain 2>/dev/null || true
 
+  # ── apt + snap publishing (beta + stable only) ────────────────────────────────
+  package-managers:
+    name: Release Package Managers
+    needs: build
+    if: inputs.channel == 'beta' || inputs.channel == 'stable'
+    uses: ./.github/workflows/release-package-managers.yml
+    secrets: inherit
+    with:
+      channel: ${{ inputs.channel }}
+
   # ── GitHub Release (stable + beta + asset) ────────────────────────────────────
   release:
     name: Create GitHub Release
@@ -355,6 +307,13 @@ jobs:
 
       - name: List artifacts
         run: find release-artifacts -type f | sort
+
+      # Pulls the changelog entry matching this version (apps/ui/src/data/changelog.json)
+      # into apps/electron/release-notes.md, used as the release body below.
+      - name: Generate release notes from changelog
+        if: inputs.channel != 'asset'
+        id: release-notes
+        run: node apps/electron/generate-release-notes.js
 
       # asset builds: installer binaries only (skip .zip — it's the raw app bundle,
       # not a user-facing distributable), tagged per run so repeat asset builds
@@ -383,6 +342,7 @@ jobs:
           name: Voiden v${{ steps.version.outputs.version }}
           prerelease: ${{ inputs.channel == 'beta' }}
           generate_release_notes: true
+          body_path: apps/electron/release-notes.md
           fail_on_unmatched_files: false
           files: |
             release-artifacts/**/*.dmg
