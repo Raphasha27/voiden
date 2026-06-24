@@ -38,6 +38,20 @@ interface RequestOrchestrator {
   clear: () => void;
 }
 
+/**
+ * Thrown when no registered plugin (core or community) recognized any block
+ * in the targeted section as the start of a request — e.g. a section that
+ * only contains markdown documentation. Distinct from a request that was
+ * built but failed to send, so callers can skip it instead of surfacing
+ * a generic pipeline error.
+ */
+export class NotARequestError extends Error {
+  constructor() {
+    super("No request blocks found in this section");
+    this.name = "NotARequestError";
+  }
+}
+
 export interface RequestExecuteOptions {
   /** ProseMirror position of the request section to execute (for multi-request docs) */
   sectionPos?: number;
@@ -68,7 +82,7 @@ class RequestOrchestratorImpl implements RequestOrchestrator {
     this.responseSections.push(section);
   }
 
-  async executeRequest(editor: Editor, environment?: Record<string, string>, signal?: AbortSignal, options?: RequestExecuteOptions): Promise<any> {
+  async executeRequest(editor: Editor, environment?: Record<string, string>, signal?: AbortSignal, options?: RequestExecuteOptions, onRequestBuilt?: () => void): Promise<any> {
     requestLogger.info("Starting request execution");
     this.currentRequestOptions = options || {};
 
@@ -240,6 +254,20 @@ class RequestOrchestratorImpl implements RequestOrchestrator {
         }));
       }
     }
+
+    // No registered plugin recognized a request-shaped block in this section
+    // (e.g. it's just markdown documentation) — every onBuildRequest handler
+    // is expected to leave `request` unchanged when its marker block is absent,
+    // so the absence of a url here is a generic, plugin-agnostic "not a request"
+    // signal rather than a build failure.
+    if (!request?.url) {
+      throw new NotARequestError();
+    }
+
+    // Only now do we know this section is an actual request — let the caller
+    // open the response panel. Deferred to here (instead of before building)
+    // so empty/documentation-only sections never flash the panel open.
+    onRequestBuilt?.();
 
     // Step 2: Send request through core pipeline
     // Pass handlerEditor (section-scoped) so pipeline hooks get scoped getJSON()
