@@ -15,12 +15,22 @@
 
 import { join } from 'path'
 import { homedir } from 'os'
-import { existsSync } from 'fs'
+import { existsSync, statSync } from 'fs'
 import { pathToFileURL } from 'url'
 import { getRegistry, type RegistryEntry } from './registryCache.js'
 
 // ─── Runner paths (priority: bundled-at-build-time > user cache > download) ───
 const RUNNER_CACHE_DIR = join(homedir(), '.voiden', 'extensions')
+
+// A failed/interrupted download can leave a 0-byte file behind; treat that as
+// "not cached" so we fall back to the bundled copy instead of importing nothing.
+function isValidRunnerFile(path: string): boolean {
+  try {
+    return existsSync(path) && statSync(path).size > 0
+  } catch {
+    return false
+  }
+}
 
 // Bundled runners pre-downloaded by cleanup.sh at Voiden build time
 function getBundledRunnerPath(pluginId: string): string | null {
@@ -29,7 +39,7 @@ function getBundledRunnerPath(pluginId: string): string | null {
     join(new URL('.', import.meta.url).pathname, '../../../bundled-runners', `${pluginId}-runner.js`),
   ]
   for (const p of candidates) {
-    if (existsSync(p)) return p
+    if (isValidRunnerFile(p)) return p
   }
   return null
 }
@@ -39,14 +49,14 @@ export function getCoreRunnerPath(pluginId: string): string {
 }
 
 export function hasCoreRunner(pluginId: string): boolean {
-  return !!getBundledRunnerPath(pluginId) || existsSync(getCoreRunnerPath(pluginId))
+  return !!getBundledRunnerPath(pluginId) || isValidRunnerFile(getCoreRunnerPath(pluginId))
 }
 
 export function getCoreRunnerImportUrl(pluginId: string): string {
   // User cache (~/.voiden/extensions) takes priority over the bundled snapshot —
   // mirrors Electron's OTA-cache-over-bundled resolution (seedBundledPluginsToCache /
   // isOtaCached) — so `plugin update` can actually supersede a bundled runner.
-  if (existsSync(getCoreRunnerPath(pluginId))) return pathToFileURL(getCoreRunnerPath(pluginId)).href
+  if (isValidRunnerFile(getCoreRunnerPath(pluginId))) return pathToFileURL(getCoreRunnerPath(pluginId)).href
   const bundled = getBundledRunnerPath(pluginId)
   if (bundled) return pathToFileURL(bundled).href
   return pathToFileURL(getCoreRunnerPath(pluginId)).href

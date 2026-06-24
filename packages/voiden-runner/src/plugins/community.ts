@@ -14,7 +14,7 @@
  */
 
 import * as https from 'https'
-import { existsSync, mkdirSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import { pathToFileURL } from 'url'
@@ -105,7 +105,13 @@ export function getCommunityRunnerPath(pluginId: string): string {
 }
 
 export function hasCommunityRunner(pluginId: string): boolean {
-  return existsSync(getCommunityRunnerPath(pluginId))
+  // A failed/interrupted download can leave a 0-byte file behind; treat that
+  // as "not installed" rather than importing an empty module.
+  try {
+    return existsSync(getCommunityRunnerPath(pluginId)) && statSync(getCommunityRunnerPath(pluginId)).size > 0
+  } catch {
+    return false
+  }
 }
 
 export function getCommunityRunnerImportUrl(pluginId: string): string {
