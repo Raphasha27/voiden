@@ -15,23 +15,66 @@
 
 import { join } from 'path'
 import { homedir } from 'os'
-import { existsSync } from 'fs'
+import { existsSync, statSync, readFileSync } from 'fs'
 import { pathToFileURL } from 'url'
 import { getRegistry, type RegistryEntry } from './registryCache.js'
+import { getInstalledVersion } from './store.js'
 
 // ─── Runner paths (priority: bundled-at-build-time > user cache > download) ───
 const RUNNER_CACHE_DIR = join(homedir(), '.voiden', 'extensions')
 
-// Bundled runners pre-downloaded by cleanup.sh at Voiden build time
-function getBundledRunnerPath(pluginId: string): string | null {
+// A failed/interrupted download can leave a 0-byte file behind; treat that as
+// "not cached" so we fall back to the bundled copy instead of importing nothing.
+function isValidRunnerFile(path: string): boolean {
+  try {
+    return existsSync(path) && statSync(path).size > 0
+  } catch {
+    return false
+  }
+}
+
+// Resolves the bundled-runners/ directory shipped inside the @voiden/runner
+// package itself (built by scripts/build-runners.mjs from plugins whose
+// plugin-registry entry has `bundled: true`). Two candidates: monorepo dev
+// layout vs. the npm-installed package layout.
+function getBundledRunnersDir(): string | null {
   const candidates = [
-    join(new URL('.', import.meta.url).pathname, '../../../../packages/voiden-runner/bundled-runners', `${pluginId}-runner.js`),
-    join(new URL('.', import.meta.url).pathname, '../../../bundled-runners', `${pluginId}-runner.js`),
+    join(new URL('.', import.meta.url).pathname, '../../../../packages/voiden-runner/bundled-runners'),
+    join(new URL('.', import.meta.url).pathname, '../../bundled-runners'),
   ]
-  for (const p of candidates) {
-    if (existsSync(p)) return p
+  for (const dir of candidates) {
+    if (existsSync(dir)) return dir
   }
   return null
+}
+
+function getBundledRunnerPath(pluginId: string): string | null {
+  const dir = getBundledRunnersDir()
+  if (!dir) return null
+  const p = join(dir, `${pluginId}-runner.js`)
+  return isValidRunnerFile(p) ? p : null
+}
+
+let bundledVersionsCache: Record<string, string> | undefined
+function getBundledVersions(): Record<string, string> {
+  if (bundledVersionsCache) return bundledVersionsCache
+  const dir = getBundledRunnersDir()
+  try {
+    bundledVersionsCache = dir ? JSON.parse(readFileSync(join(dir, 'versions.json'), 'utf-8')) : {}
+  } catch {
+    bundledVersionsCache = {}
+  }
+  return bundledVersionsCache!
+}
+
+/** Version of the copy currently bundled inside the package (not the latest registry version). */
+export function getBundledVersion(pluginId: string): string | undefined {
+  return getBundledVersions()[pluginId]
+}
+
+/** The version actually present locally — cached download takes priority over the bundled copy. */
+export function getCoreRunnerVersion(pluginId: string): string | undefined {
+  return getInstalledVersion(pluginId) ?? getBundledVersion(pluginId)
 }
 
 export function getCoreRunnerPath(pluginId: string): string {
@@ -39,14 +82,14 @@ export function getCoreRunnerPath(pluginId: string): string {
 }
 
 export function hasCoreRunner(pluginId: string): boolean {
-  return !!getBundledRunnerPath(pluginId) || existsSync(getCoreRunnerPath(pluginId))
+  return !!getBundledRunnerPath(pluginId) || isValidRunnerFile(getCoreRunnerPath(pluginId))
 }
 
 export function getCoreRunnerImportUrl(pluginId: string): string {
   // User cache (~/.voiden/extensions) takes priority over the bundled snapshot —
   // mirrors Electron's OTA-cache-over-bundled resolution (seedBundledPluginsToCache /
   // isOtaCached) — so `plugin update` can actually supersede a bundled runner.
-  if (existsSync(getCoreRunnerPath(pluginId))) return pathToFileURL(getCoreRunnerPath(pluginId)).href
+  if (isValidRunnerFile(getCoreRunnerPath(pluginId))) return pathToFileURL(getCoreRunnerPath(pluginId)).href
   const bundled = getBundledRunnerPath(pluginId)
   if (bundled) return pathToFileURL(bundled).href
   return pathToFileURL(getCoreRunnerPath(pluginId)).href

@@ -1113,6 +1113,12 @@ const FileLinkNodeView = ({ node }: NodeViewProps) => {
  */
 export const FileLinkPluginKey = new PluginKey("fileLink");
 
+let activeFileLinkPopup: any | undefined;
+
+// Mirrors isTableCellAutocompleteOpen/isSlashMenuOpen — lets the global
+// table-cell Enter handler know this suggestion popup owns Enter while open.
+export const isFileLinkSuggestionOpen = () => !!activeFileLinkPopup?.state?.isShown;
+
 export type FileLinkOptions = {
   HTMLAttributes: Record<string, any>;
   renderText: (props: { options: FileLinkOptions; node: JSONContent }) => string;
@@ -1473,6 +1479,7 @@ export const FileLink = Node.create<FileLinkOptions>({
                   requestAnimationFrame(() => instance.popperInstance?.update());
                 },
               });
+              activeFileLinkPopup = popup;
             },
             onUpdate(props) {
               reactRenderer?.updateProps(props);
@@ -1504,6 +1511,9 @@ export const FileLink = Node.create<FileLinkOptions>({
             onExit() {
               popup?.destroy();
               reactRenderer?.destroy();
+              if (activeFileLinkPopup === popup) {
+                activeFileLinkPopup = undefined;
+              }
             },
           };
         },

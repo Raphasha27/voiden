@@ -1,12 +1,19 @@
 /**
- * Plugin update detection — compares each installed plugin's recorded runner
- * version (store.ts) against the latest version published in the shared
- * plugin-registry (registryCache.ts). Used by `plugin update` and the
- * post-command update notice in index.ts.
+ * Plugin update detection — compares each plugin's currently-active runner
+ * version against the latest version published in the shared plugin-registry
+ * (registryCache.ts). Used by `plugin update` and the post-command update
+ * notice in index.ts.
+ *
+ * Core plugins are checked even if never explicitly `plugin install`ed —
+ * they're enabled by default and may only exist as the version bundled
+ * inside the @voiden/runner package (see registry.ts:getCoreRunnerVersion),
+ * so users still get notified when a newer release is available.
  */
 
 import { getAllInstalledPlugins } from './store.js'
 import { getRegistry } from './registryCache.js'
+import { getCorePlugins, getCoreRunnerVersion } from './registry.js'
+import { isCorePluginEnabled } from './loader.js'
 
 export interface PluginUpdateInfo {
   id: string
@@ -29,24 +36,30 @@ function isNewer(latest: string, installed: string): boolean {
 }
 
 export async function checkForPluginUpdates(): Promise<PluginUpdateInfo[]> {
-  const installed = getAllInstalledPlugins()
-  if (installed.length === 0) return []
-
   const registry = await getRegistry()
   const byId = new Map(registry.map((e) => [e.id, e]))
-
   const updates: PluginUpdateInfo[] = []
-  for (const plugin of installed) {
+
+  // Core plugins: compare whatever version is actually present locally
+  // (bundled copy, or a cached download from a previous `plugin install`/
+  // `update`) against the registry's latest — regardless of explicit install.
+  const corePlugins = await getCorePlugins()
+  for (const def of corePlugins) {
+    if (!isCorePluginEnabled(def.name)) continue
+    const current = getCoreRunnerVersion(def.name)
+    if (!current) continue
+    if (isNewer(def.version, current)) {
+      updates.push({ id: def.name, type: 'core', installedVersion: current, latestVersion: def.version })
+    }
+  }
+
+  // Community plugins: only ones explicitly installed have a version to compare.
+  for (const plugin of getAllInstalledPlugins()) {
     if (!plugin.version) continue
     const entry = byId.get(plugin.name)
-    if (!entry) continue
+    if (!entry || entry.type !== 'community') continue
     if (isNewer(entry.version, plugin.version)) {
-      updates.push({
-        id: plugin.name,
-        type: entry.type,
-        installedVersion: plugin.version,
-        latestVersion: entry.version,
-      })
+      updates.push({ id: plugin.name, type: 'community', installedVersion: plugin.version, latestVersion: entry.version })
     }
   }
   return updates

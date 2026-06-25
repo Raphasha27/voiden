@@ -1,5 +1,23 @@
 [
   {
+    "version": "v2.1.1",
+    "date": "25/06/2026",
+    "title": "Environment IPC Rework & Editor Fixes",
+    "description": "Patch release reworking the core environment IPC so extending or creating an environment always targets the correct profile and env node, plus fixes to the environment editor, file-link autocomplete, code editor sizing, the What's New dialog, voiden-runner plugin loading, and request execution on documentation-only sections.",
+    "icon": "Wrench",
+    "iconColor": "text-orange-400",
+    "bgColor": "bg-gradient-to-br from-slate-900 to-orange-950",
+    "changes": {
+      "Fixed": [
+        "env:extend-env-files IPC (used when extending an environment or creating a new one, e.g. from an import) now resolves the correct profile and YAML env node — a named import target, the active environment, or a 'default' fallback — and creates the profile's YAML file and env node on demand, instead of writing to the old flat .env file format",
+        "Environment editor no longer discards an in-progress 'add variable' row when switching tabs — the unsaved key/value text is now restored",
+        "File-link '@' picker inside multipart table cells now correctly claims the Enter key, instead of the table's cell-navigation handler stealing it when the cell already has content before the cursor",
+        "Code editor (CodeMirror) no longer collapses to a small fixed height in some panels — it now fills the available container height",
+        "What's New dialog now shows the current release notes under a \"Welcome to Voiden\" header for fresh installs instead of a separate static feature grid, and no longer pops up the spotlight teaser while the onboarding modal is still open"
+      ]
+    }
+  },
+  {
     "version": "v2.1.0",
     "date": "23/06/2026",
     "title": "Block Overview Panel, Unresolved Variable Guard & Editor Usability",

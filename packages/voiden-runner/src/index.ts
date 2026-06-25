@@ -9,7 +9,7 @@ import { runVoidFile } from './runner.js'
 import { loadEnabledPlugins } from './plugins/loader.js'
 import { exportToCsv } from './report/csv.js'
 import { sendMailReport } from './report/mail.js'
-import { getCorePlugins, findPlugin } from './plugins/registry.js'
+import { getCorePlugins, findPlugin, hasCoreRunner } from './plugins/registry.js'
 import { downloadCoreRunner } from './plugins/loader.js'
 import {
   fetchCommunityPlugins,
@@ -338,6 +338,59 @@ function printRunSummaryJson(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Changelog — voiden-runner ships its own CHANGELOG.md, versioned and released
+// independently of the desktop app's in-app changelog.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ChangelogEntry {
+  version: string
+  date?: string
+  body: string[]
+}
+
+/** Split CHANGELOG.md into per-version entries on "## " headers (newest first, matching file order). */
+function parseChangelog(content: string): ChangelogEntry[] {
+  const lines = content.split('\n')
+  const entries: ChangelogEntry[] = []
+  let current: ChangelogEntry | null = null
+
+  for (const line of lines) {
+    const headerMatch = line.match(/^##\s+(\S+)(?:\s+-\s+(.+))?$/)
+    if (headerMatch) {
+      if (current) entries.push(current)
+      current = { version: headerMatch[1], date: headerMatch[2]?.trim(), body: [] }
+      continue
+    }
+    if (current) current.body.push(line)
+  }
+  if (current) entries.push(current)
+  return entries
+}
+
+function renderChangelogEntry(entry: ChangelogEntry): void {
+  const header = entry.date ? `${entry.version}  ${chalk.gray(entry.date)}` : entry.version
+  console.log(chalk.bold.white(`  ${header}`))
+  console.log(DIVIDER)
+  for (const line of entry.body) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const sectionMatch = trimmed.match(/^###\s+(.+)$/)
+    if (sectionMatch) {
+      console.log()
+      console.log(chalk.bold.cyan(`  ${sectionMatch[1]}`))
+      continue
+    }
+    const bulletMatch = trimmed.match(/^-\s+(.+)$/)
+    if (bulletMatch) {
+      console.log(chalk.gray(`    ·  `) + bulletMatch[1])
+      continue
+    }
+    console.log(`  ${trimmed}`)
+  }
+  console.log()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Plugin update notices — surfaced after `run` and `plugin` commands so users
 // learn about newer registry versions without having to run `plugin list`.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -374,6 +427,53 @@ program
   .name('voiden-runner')
   .description('Run .void files headlessly — REST, WebSocket, and gRPC')
   .version(pkg.version)
+
+// ── voiden-runner changelog ───────────────────────────────────────────────────
+
+program
+  .command('changelog [version]')
+  .description(
+    'Show release notes for voiden-runner — versioned independently of the desktop app\n\n' +
+    '  Examples:\n' +
+    '    voiden-runner changelog            # full history\n' +
+    '    voiden-runner changelog --latest   # most recent release only\n' +
+    '    voiden-runner changelog 2.1.0       # a specific version\n'
+  )
+  .option('--latest', 'Show only the most recent release')
+  .action((version: string | undefined, opts: { latest?: boolean }) => {
+    const changelogPath = resolve(join(dirname(fileURLToPath(import.meta.url)), '../CHANGELOG.md'))
+    if (!existsSync(changelogPath)) {
+      console.error(chalk.red('  ✗  No CHANGELOG.md found for this install.'))
+      process.exit(1)
+    }
+
+    const entries = parseChangelog(readFileSync(changelogPath, 'utf-8'))
+    if (entries.length === 0) {
+      console.log(chalk.gray('  Changelog is empty.'))
+      return
+    }
+
+    let toShow = entries
+    if (version) {
+      const normalized = version.replace(/^v/, '')
+      const match = entries.find(e => e.version.replace(/^v/, '') === normalized)
+      if (!match) {
+        console.error(chalk.red(`  ✗  No changelog entry found for version "${version}".`))
+        console.log(chalk.gray(`     Available: ${entries.map(e => e.version).join(', ')}`))
+        process.exit(1)
+      }
+      toShow = [match!]
+    } else if (opts.latest) {
+      toShow = [entries[0]]
+    }
+
+    console.log()
+    console.log(chalk.bold.white('  voiden-runner changelog'))
+    console.log()
+    for (const entry of toShow) {
+      renderChangelogEntry(entry)
+    }
+  })
 
 // ── voiden-runner run ─────────────────────────────────────────────────────────
 
@@ -917,6 +1017,23 @@ pluginCmd
         continue
       }
 
+      // Core plugins: only download if not already bundled in the package or cached
+      // from a previous install — `bundled: true` plugins should need no network call.
+      if (coreDef && !hasCoreRunner(name)) {
+        process.stdout.write(`  ↓  Downloading runner for ${chalk.bold(name)} …`)
+        try {
+          const ok = await downloadCoreRunner(coreDef.name, coreDef.repo, coreDef.runnerAsset, coreDef.version, false)
+          process.stdout.write('\r' + ' '.repeat(60) + '\r')
+          if (!ok) {
+            console.log(chalk.red(`  ✗  No "${coreDef.runnerAsset}" asset in release v${coreDef.version} for "${name}"`))
+            continue
+          }
+        } catch (err: any) {
+          process.stdout.write('\r' + chalk.red(`  ✗  Failed to download runner for "${name}": ${err?.message ?? String(err)}\n`))
+          continue
+        }
+      }
+
       // Community plugins: download runner.js from the GitHub release first
       if (commDef) {
         process.stdout.write(`  ↓  Downloading runner for ${chalk.bold(name)} …`)
@@ -1031,16 +1148,40 @@ pluginCmd
     }
   })
 
-// voiden-runner plugin uninstall <name>
+// voiden-runner plugin uninstall [names...] --all
 pluginCmd
-  .command('uninstall <name>')
-  .description('Remove an installed plugin\n\n  Example:\n    voiden-runner plugin uninstall voiden-scripting\n')
-  .action((name: string) => {
-    const removed = uninstallPlugin(name)
-    if (removed) {
-      console.log(chalk.green(`  ✓  Uninstalled`) + ` ${name}`)
-    } else {
-      console.log(chalk.yellow(`  ⚠  Plugin "${name}" is not installed`))
+  .command('uninstall [names...]')
+  .description(
+    'Remove one or more installed plugins, or all installed plugins\n\n' +
+    '  Examples:\n' +
+    '    voiden-runner plugin uninstall voiden-scripting\n' +
+    '    voiden-runner plugin uninstall apyhub-explorer voiden-scripting\n' +
+    '    voiden-runner plugin uninstall --all\n'
+  )
+  .option('--all', 'Uninstall all installed plugins (core and community)')
+  .action((names: string[], opts: { all?: boolean }) => {
+    const targets: string[] = opts.all ? Object.keys(readStore().installedPlugins) : names
+
+    if (targets.length === 0) {
+      console.error(chalk.red('  Specify plugin name(s) or use --all'))
+      process.exit(1)
+      return
+    }
+
+    let removedCount = 0
+    for (const name of targets) {
+      const removed = uninstallPlugin(name)
+      if (removed) {
+        console.log(chalk.green(`  ✓  Uninstalled`) + ` ${name}`)
+        removedCount++
+      } else {
+        console.log(chalk.yellow(`  ⚠  Plugin "${name}" is not installed`))
+      }
+    }
+
+    if (removedCount > 1) {
+      console.log()
+      console.log(chalk.gray(`  ${removedCount} plugin(s) uninstalled.`))
     }
   })
 

@@ -1108,6 +1108,8 @@ export const CodeEditor = memo(({ tabId, content, source, panelId, isActive = tr
       <div className="flex-1 min-h-0">
         <ReactCodeMirror
           autoFocus={false}
+          className="h-full"
+          height="100%"
           value={initialContent}
           theme={voidenTheme}
           onChange={streamable ? undefined : onChange}
