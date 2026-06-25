@@ -11,6 +11,7 @@ import dotenv from "dotenv";
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
+import * as os from "os";
 import { execSync } from "child_process";
 
 dotenv.config({ path: "../../.env" });
@@ -124,37 +125,52 @@ if (isMac) {
       // appears in Windows Explorer for .void and common text/code files.
       getAppBuilderConfig: async () => ({
         win: {
-          // Signs via Azure Trusted Signing (azuresigntool must be on PATH).
-          // Required env vars: AZURE_CODE_SIGNING_ENDPOINT, AZURE_CLIENT_ID,
-          // AZURE_CLIENT_SECRET, AZURE_TENANT_ID, AZURE_CODE_SIGNING_CERT_PROFILE
+          // Signs via Azure Trusted Signing using Microsoft.Trusted.Signing.Client
+          // (the `smctl` / `signtool integration` CLI, not AzureSignTool — that's
+          // for Key Vault-based signing, a different Azure service).
+          // Auth comes from AZURE_CLIENT_ID/AZURE_CLIENT_SECRET/AZURE_TENANT_ID
+          // (a service principal), picked up automatically by the client's
+          // DefaultAzureCredential — no Key Vault flags involved.
+          // Required env vars: AZURE_CODE_SIGNING_ENDPOINT, AZURE_CODE_SIGNING_ACCOUNT_NAME,
+          // AZURE_CODE_SIGNING_CERT_PROFILE, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID
           sign: async (config: { path: string }) => {
             const endpoint     = process.env.AZURE_CODE_SIGNING_ENDPOINT;
-            const clientId     = process.env.AZURE_CLIENT_ID;
-            const clientSecret = process.env.AZURE_CLIENT_SECRET;
-            const tenantId     = process.env.AZURE_TENANT_ID;
+            const accountName  = process.env.AZURE_CODE_SIGNING_ACCOUNT_NAME;
             const certProfile  = process.env.AZURE_CODE_SIGNING_CERT_PROFILE;
 
-            if (!endpoint || !clientId || !clientSecret || !tenantId || !certProfile) {
+            if (!endpoint || !accountName || !certProfile) {
               throw new Error(
                 "Missing Azure Trusted Signing env vars. Required: " +
-                "AZURE_CODE_SIGNING_ENDPOINT, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, " +
-                "AZURE_TENANT_ID, AZURE_CODE_SIGNING_CERT_PROFILE"
+                "AZURE_CODE_SIGNING_ENDPOINT, AZURE_CODE_SIGNING_ACCOUNT_NAME, " +
+                "AZURE_CODE_SIGNING_CERT_PROFILE"
               );
             }
 
-            const cmd = [
-              "azuresigntool sign",
-              `-kvu "${endpoint}"`,
-              `-kvi "${clientId}"`,
-              `-kvs "${clientSecret}"`,
-              `-kvt "${tenantId}"`,
-              `-kvc "${certProfile}"`,
-              `-tr http://timestamp.acs.microsoft.com`,
-              `-v "${config.path}"`,
-            ].join(" ");
+            const metadata = {
+              Endpoint: endpoint,
+              CodeSigningAccountName: accountName,
+              CertificateProfileName: certProfile,
+              CorrelationId: crypto.randomUUID(),
+            };
+            const metadataPath = path.join(os.tmpdir(), `trusted-signing-metadata-${crypto.randomUUID()}.json`);
+            fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
 
-            execSync(cmd, { stdio: "inherit" });
-            console.log(`Signed: ${path.basename(config.path)}`);
+            try {
+              const cmd = [
+                "signtool sign",
+                `/v /fd SHA256`,
+                `/tr http://timestamp.acs.microsoft.com`,
+                `/td SHA256`,
+                `/dlib "${process.env.ProgramFiles}\\Trusted Signing Client\\bin\\x64\\Azure.CodeSigning.Dlib.dll"`,
+                `/dmdf "${metadataPath}"`,
+                `"${config.path}"`,
+              ].join(" ");
+
+              execSync(cmd, { stdio: "inherit" });
+              console.log(`Signed: ${path.basename(config.path)}`);
+            } finally {
+              fs.unlinkSync(metadataPath);
+            }
           },
         },
         fileAssociations: [
