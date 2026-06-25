@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "version": "2.1.1",
+      "date": "June 2026",
+      "whatsnew": [
+        {
+          "icon": "🌱",
+          "title": "More Reliable Environment Creation",
+          "description": "Extending or creating an environment (including from imports) now always lands in the right profile and environment node, with the YAML file created on demand — instead of writing to the old flat .env format."
+        },
+        {
+          "icon": "🐛",
+          "title": "Editor & Reliability Fixes",
+          "description": "The environment editor no longer discards an in-progress variable you were adding when you switch tabs, the file-link \"@\" picker in multipart tables claims Enter correctly, the code editor fills its panel height properly, and running a documentation-only section now shows a friendly \"Nothing to run\" message instead of an empty response panel."
+        }
+      ]
+    },
+    {
       "version": "2.1.0",
       "date": "June 2026",
       "whatsnew": [
