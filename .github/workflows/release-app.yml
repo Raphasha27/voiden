@@ -81,8 +81,12 @@ jobs:
             arch_flag: '--arch=x64'
             artifact_name: darwin-x64
 
+          # Pinned to windows-2022 (not windows-latest) — that image bundles
+          # Visual Studio "18" (2026), and the installed node-gyp doesn't
+          # recognize that version string ("unknown version \"undefined\""),
+          # so it fails to find VS at all even though it's present.
           - label: Windows (x64)
-            os: windows-latest
+            os: windows-2022
             arch_flag: ''
             artifact_name: win32-x64
 
