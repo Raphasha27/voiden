@@ -119,7 +119,7 @@ AI Friendly:
 
 ## Install
 
-**Current version:** `2.0.1`
+**Current version:** `2.1.0`
 
 Download installers for macOS, Windows, and Linux from [voiden.md/download](https://voiden.md/download).
 Direct downloads are available for Apple Silicon and Intel macOS, Windows `.exe`, and Linux `.deb`, `.rpm`, and `.AppImage` builds.
