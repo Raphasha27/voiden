@@ -21,7 +21,8 @@
 #   AZURE_CLIENT_ID                  — Azure service principal client ID
 #   AZURE_CLIENT_SECRET              — Azure service principal client secret
 #   AZURE_TENANT_ID                  — Azure AD tenant ID
-#   AZURE_CODE_SIGNING_ENDPOINT      — e.g. https://<account>.<region>.codesigning.azure.net
+#   AZURE_CODE_SIGNING_ENDPOINT      — e.g. https://<region>.codesigning.azure.net
+#   AZURE_CODE_SIGNING_ACCOUNT_NAME  — Trusted Signing account name in Azure Portal
 #   AZURE_CODE_SIGNING_CERT_PROFILE  — certificate profile name in Azure Trusted Signing
 #   Each channel publishes through its own IAM credentials, scoped to its own bucket:
 #   S3_ACCESS_KEY_ID_BETA       — AWS access key for beta channel
@@ -149,9 +150,9 @@ jobs:
             -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" build.keychain
           rm -f certificate.p12
 
-      - name: Install AzureSignTool
+      - name: Install Microsoft Trusted Signing Client
         if: runner.os == 'Windows'
-        run: dotnet tool install --global AzureSignTool
+        run: dotnet tool install --global Microsoft.Trusted.Signing.Client
 
       # ── beta / stable / development: yarn publish (make + upload to S3) ──────
       - name: Publish to S3 — macOS Silicon
@@ -210,6 +211,7 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CODE_SIGNING_ENDPOINT: ${{ secrets.AZURE_CODE_SIGNING_ENDPOINT }}
+          AZURE_CODE_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_CODE_SIGNING_ACCOUNT_NAME }}
           AZURE_CODE_SIGNING_CERT_PROFILE: ${{ secrets.AZURE_CODE_SIGNING_CERT_PROFILE }}
         run: yarn publish
 
