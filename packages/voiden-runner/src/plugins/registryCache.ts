@@ -27,6 +27,8 @@ export interface RegistryEntry {
   runnerAsset?: string
   icon?: string
   voidenVersion?: string
+  /** Set by plugin-registry maintainers when this plugin's runner should ship inside the @voiden/runner npm package (see bundled-runners/). */
+  bundled?: boolean
 }
 
 let memCache: RegistryEntry[] | undefined

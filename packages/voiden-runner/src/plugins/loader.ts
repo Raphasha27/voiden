@@ -29,6 +29,26 @@ import * as https from 'https'
 import { mkdirSync, createWriteStream, existsSync } from 'fs'
 import { dirname } from 'path'
 
+// Follows redirects (GitHub release assets 302 to signed blob-storage URLs).
+function downloadToFile(url: string, destPath: string, hops = 5): Promise<void> {
+  return new Promise((resolve, reject) => {
+    https.get(url, { headers: { 'User-Agent': 'voiden-runner' } }, res => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        if (hops <= 0) { reject(new Error('Too many redirects')); return }
+        downloadToFile(res.headers.location, destPath, hops - 1).then(resolve, reject)
+        return
+      }
+      if (res.statusCode && res.statusCode >= 400) {
+        reject(new Error(`HTTP ${res.statusCode}`))
+        return
+      }
+      const file = createWriteStream(destPath)
+      res.pipe(file)
+      file.on('finish', () => { file.close(); resolve() })
+    }).on('error', reject)
+  })
+}
+
 /**
  * Download a core plugin runner bundle from its GitHub repo release, pinned to
  * the version published in the registry — mirrors the Electron app's
@@ -57,14 +77,11 @@ export async function downloadCoreRunner(pluginId: string, repo: string, assetNa
     return false
   }
 
-  // Download the asset
-  await new Promise<void>((resolve, reject) => {
-    const file = createWriteStream(destPath)
-    https.get(asset.browser_download_url, { headers: { 'User-Agent': 'voiden-runner' } }, res => {
-      res.pipe(file)
-      file.on('finish', () => { file.close(); resolve() })
-    }).on('error', reject)
-  })
+  // Download the asset, following redirects — GitHub's browser_download_url
+  // always 302s to a signed blob-storage URL, which https.get does not follow
+  // automatically. Without this, the response piped to disk is the empty
+  // redirect body, leaving a 0-byte runner.js.
+  await downloadToFile(asset.browser_download_url, destPath)
 
   setPluginVersion(pluginId, version)
   if (verbose) console.log(`  [plugins] Downloaded ${assetName}@${version} → ${destPath}`)
@@ -74,7 +91,7 @@ export async function downloadCoreRunner(pluginId: string, repo: string, assetNa
 // ─── Per-plugin enabled check ─────────────────────────────────────────────────
 
 // Core plugins default to enabled; only skip if explicitly set to false in store.
-function isCorePluginEnabled(name: string): boolean {
+export function isCorePluginEnabled(name: string): boolean {
   const store = readStore()
   const record = store.installedPlugins[name]
   return record === undefined ? true : record.enabled
@@ -147,7 +164,9 @@ export async function loadEnabledPlugins(
 
   // ── Core plugins ──────────────────────────────────────────────────────────
   // Core plugins default to enabled but can be disabled via ~/.voiden/plugins.json.
-  // Runner bundles are downloaded on-demand from each plugin's GitHub repo.
+  // `run` never downloads anything — it only uses what's already bundled in the
+  // package (see bundled-runners/) or previously cached via `plugin install` /
+  // `plugin update`. A plugin that's neither gets a one-line install hint.
   const corePlugins = await getCorePlugins()
   for (const def of corePlugins) {
     if (skipPlugins.has(def.name)) {
@@ -159,14 +178,8 @@ export async function loadEnabledPlugins(
       continue
     }
 
-    // Auto-download runner bundle if not cached locally
     if (!hasCoreRunner(def.name)) {
-      if (verbose) console.log(`  [plugins] Downloading runner for ${def.name} from ${def.repo}...`)
-      await downloadCoreRunner(def.name, def.repo, def.runnerAsset, def.version, verbose)
-    }
-
-    if (!hasCoreRunner(def.name)) {
-      if (verbose) console.warn(`  [plugins] Runner not available for ${def.name} — skipping`)
+      console.log(`  [plugins] "${def.name}" not installed — run: voiden-runner plugin install ${def.name}`)
       continue
     }
 
